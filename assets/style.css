@@ -1,0 +1,65 @@
+/* MAIN */
+
+* {
+    font-family: "Source Sans Pro", sans-serif;
+}
+
+.main .block-container {
+    /* Expands the width of the Streamlit app by targeting the main container's class */
+    max-width: 1000px !important;
+}
+
+
+/* CUSTOM OKR DISPLAY */
+
+.container-numbers {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+    align-items: center;
+    justify-content: space-around;
+    background-color: #f5f5f5;
+    border-radius: 1rem;
+    margin-bottom: 3rem;
+}
+
+.container-number {
+    padding: 1rem;
+    border-radius: 10px;
+    width: 275px;
+}
+
+.number-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.number {
+    text-align: center;
+    font-weight: 800;
+}
+
+.number-footer {
+    margin-top: 1.3rem;
+    text-align: left;
+    color: grey;
+}
+
+.visium-color {
+    color: #0858cf;
+}
+
+.delta-up {
+    border-radius: 6px;
+    background-color: lightgreen;
+    padding: 0 0.5rem;
+    margin-left: 1rem;
+}
+
+.delta-down {
+    border-radius: 6px;
+    background-color: lightcoral;
+    padding: 0 0.5rem;
+    margin-left: 1rem;
+}
