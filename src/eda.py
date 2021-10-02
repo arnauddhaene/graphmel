@@ -12,7 +12,8 @@ import streamlit as st
 
 # import plotly.express as px
 
-import hvplot.pandas
+# Uncomment to allow running
+# import hvplot.pandas
 
 import holoviews as hv
 # from holoviews import opts
