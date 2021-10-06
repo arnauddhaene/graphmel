@@ -24,7 +24,15 @@ The modeling experiments and their runs are tracked with MLflow. To run the UI, 
 mlflow ui
 ```
 
-(For the moment, the `mlruns` is included in the `.gitignore` as the artifacts are quite large and most coding is done on my laptop)
+#### Sharing the experimentation results
+
+For the moment, the `mlruns` is included in the `.gitignore` as the artifacts are quite large and most coding is done on my laptop.
+
+For this reason, I will use `ngrok` to share my localhost port via http during meetings or code review sessions. For reference, the command is:
+
+```bash
+cd && ./ngrok http 5000
+```
 
 ### Running the model
 

@@ -21,9 +21,9 @@ from utils import load_dataset, ASSETS_DIR
               help="Graph connectivity choice.")
 @click.option('--epochs', default=50,
               help="Number of training epochs.")
-@click.option('--lr', default=5e-3,
+@click.option('--lr', default=1e-3,
               help="Learning rate.")
-@click.option('--decay', default=1e-3,
+@click.option('--decay', default=5e-3,
               help="Optimizer weight decay.")
 @click.option('--hidden-dim', default=32,
               help="GNN hidden dimensions.")

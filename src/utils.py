@@ -19,11 +19,16 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir)
 DATA_DIR = os.path.join(BASE_DIR, 'data/')
 ASSETS_DIR = os.path.join(BASE_DIR, 'assets/')
 
+CONNECTION_DIR = '/Volumes/lts4-immuno/'
+DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04']
 
-lesions_file = 'melanoma_lesion-info_organ-overlap_2021-09-17_anonymized_cleaned_all.csv'
-lesion_mapping_file = 'melanoma_lesion_mapping_2021-09-20_anonymized.csv'
-patients_file = 'melanoma_patient-level_summary_anonymized.csv'
-studies_file = 'melanoma_study_level_summary_anonymized.csv'
+FILES = dict(
+    lesions='melanoma_lesion-info_organ-overlap_2021-09-17_anonymized_cleaned_all.csv',
+    lesion_mapping='melanoma_lesion_mapping_2021-09-20_anonymized.csv',
+    patients='melanoma_patient-level_summary_anonymized.csv',
+    studies='melanoma_study_level_summary_anonymized.csv',
+    blood='melanoma_info_patient-treatment-blood-mutation_2021-10-04_anonymized.csv',
+    progression='melanoma_petct-exams_progression-status_2021-10-04_anonymized.csv')
 
 
 def create_dataset(
@@ -32,7 +37,7 @@ def create_dataset(
     verbose: int = 0
 ):
     # Fetch lesions datafile
-    lesions = pd.read_csv(os.path.join(filepath, lesions_file))
+    lesions = pd.read_csv(os.path.join(filepath, FILES['lesions_file']))
     lesions['study_phase'] = lesions.study_name.apply(extract_study_phase)
     
     # Compute TMTV by summing `vol_ccm` per study
