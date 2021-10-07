@@ -10,7 +10,7 @@ from scipy.stats import wasserstein_distance
 
 import torch
 from torch_geometric.data import Data
-from torch_geometric.utils import to_networkx 
+from torch_geometric.utils import to_networkx
 
 import streamlit as st
 
@@ -65,7 +65,7 @@ blood.rename(columns={feature: feature.replace('-', '_') for feature in blood.co
 
 # Select study of interest
 patient = st.sidebar.selectbox('Select patient of interest', lesions.gpcr_id.unique())
-study = st.sidebar.selectbox('Select study phase of interest', 
+study = st.sidebar.selectbox('Select study phase of interest',
                              lesions[lesions.gpcr_id == patient].study_name.unique(), 0)
 
 df = lesions[(lesions.study_name == study) & (lesions.gpcr_id == patient)].copy()
@@ -88,16 +88,15 @@ with st.expander('See lesion statistics:'):
 
     with col1:
         st.plotly_chart(
-            px.histogram(df, x='assigned_organ',
-                        labels=figure_labels)
-                .update_layout(legend=top_h_legend, yaxis_title='Lesions', width=WIDTH/2)
-                .update_xaxes(categoryorder='total descending')
+            px.histogram(df, x='assigned_organ', labels=figure_labels)
+            .update_layout(legend=top_h_legend, yaxis_title='Lesions', width=WIDTH / 2)
+            .update_xaxes(categoryorder='total descending')
         )
 
     with col2:
         st.plotly_chart(
             px.scatter_matrix(df[radiomics_features], labels=figure_labels)
-                .update_layout(legend=top_h_legend, width=WIDTH/2)
+            .update_layout(legend=top_h_legend, width=WIDTH / 2)
         )
 
 con, col = st.columns(2)
@@ -182,8 +181,8 @@ if color_metric == 'assigned_organ':
     for organ, i in organs.items():
         plt.scatter([], [], c=cmap(i), label=organ)
 
-    plt.legend(loc="upper center", bbox_to_anchor=(0.5, 1.2), 
-               ncol=round(len(organs)/2))
+    plt.legend(loc="upper center", bbox_to_anchor=(0.5, 1.2),
+               ncol=round(len(organs) / 2))
     
     nx.draw_networkx(G, pos, node_color=node_color, cmap=cmap)
     

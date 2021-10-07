@@ -192,11 +192,12 @@ def format_number_header(heading: str, spotlight: str, footer: str) -> str:
         </div>
     """
 
+
 def preprocess(
     df: pd.DataFrame,
     features_categorical: List[str] = [], features_numerical: List[str] = [],
     training: bool = True, index: str = 'gpcr_id',
-    imputer_categorical: BaseEstimator = SimpleImputer(strategy='most_frequent'), 
+    imputer_categorical: BaseEstimator = SimpleImputer(strategy='most_frequent'),
     imputer_numerical: BaseEstimator = SimpleImputer(strategy='median'),
     estimator_categorical: BaseEstimator = OneHotEncoder(drop='if_binary'),
     estimator_numerical: BaseEstimator = StandardScaler(),
@@ -211,10 +212,10 @@ def preprocess(
             estimator_categorical.fit(df[features_categorical])
             
         processed = np.append(processed,
-                  estimator_categorical.transform(
-                      imputer_categorical.transform(df[features_categorical])
-                  ).todense(),
-                  axis=1)
+                              estimator_categorical.transform(
+                                  imputer_categorical.transform(
+                                      df[features_categorical])
+                              ).todense(), axis=1)
         
         columns.extend(estimator_categorical.get_feature_names())
 
@@ -224,9 +225,10 @@ def preprocess(
             estimator_numerical.fit(df[features_numerical])
             
         processed = np.append(processed,
-                  estimator_numerical.transform(
-                      imputer_numerical.transform(df[features_numerical])),
-                  axis=1)
+                              estimator_numerical.transform(
+                                  imputer_numerical.transform(
+                                      df[features_numerical])
+                              ), axis=1)
                        
         columns.extend(features_numerical)
     
