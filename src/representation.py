@@ -182,8 +182,8 @@ graph = Data(x=x, edge_index=edge_index, num_nodes=num_nodes, y=y)
 m1, m2, m3, m4 = st.columns(4)
 
 m1.metric('Nodes', graph.num_nodes)
-m2.metric('Edges', graph.num_edges)
-m3.metric('Avg. node deg.', f'{graph.num_edges / graph.num_nodes:.1f}')
+m2.metric('Edges', int(graph.num_edges / 2))
+m3.metric('Avg. node deg.', f'{graph.num_edges / (2 * graph.num_nodes):.1f}')
 m4.metric('Isolated nodes', graph.has_isolated_nodes())
 
 G = to_networkx(graph, to_undirected=True)
