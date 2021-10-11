@@ -1,5 +1,7 @@
 import os
 
+from typing import List
+
 from itertools import permutations
 
 import datetime as dt
@@ -8,6 +10,8 @@ import pandas as pd
 import numpy as np
 
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.base import BaseEstimator
+from sklearn.impute import SimpleImputer
 
 import mlflow
 
@@ -187,3 +191,48 @@ def format_number_header(heading: str, spotlight: str, footer: str) -> str:
             <div class="number-footer"> {footer} </div>
         </div>
     """
+
+
+def preprocess(
+    df: pd.DataFrame,
+    features_categorical: List[str] = [], features_numerical: List[str] = [],
+    training: bool = True, index: str = 'gpcr_id',
+    imputer_categorical: BaseEstimator = SimpleImputer(strategy='most_frequent'),
+    imputer_numerical: BaseEstimator = SimpleImputer(strategy='median'),
+    estimator_categorical: BaseEstimator = OneHotEncoder(drop='if_binary'),
+    estimator_numerical: BaseEstimator = StandardScaler(),
+):
+    
+    processed = df[[index]]
+    columns = [index]
+    
+    if len(features_categorical) > 0:
+        if training:
+            imputer_categorical.fit(df[features_categorical])
+            estimator_categorical.fit(df[features_categorical])
+            
+        processed = np.append(processed,
+                              estimator_categorical.transform(
+                                  imputer_categorical.transform(
+                                      df[features_categorical])
+                              ).todense(), axis=1)
+        
+        columns.extend(estimator_categorical.get_feature_names())
+
+    if len(features_numerical) > 0:
+        if training:
+            imputer_numerical.fit(df[features_numerical])
+            estimator_numerical.fit(df[features_numerical])
+            
+        processed = np.append(processed,
+                              estimator_numerical.transform(
+                                  imputer_numerical.transform(
+                                      df[features_numerical])
+                              ), axis=1)
+                       
+        columns.extend(features_numerical)
+    
+    processed = pd.DataFrame(processed, columns=columns)
+    
+    return processed, \
+        imputer_categorical, imputer_numerical, estimator_categorical, estimator_numerical
