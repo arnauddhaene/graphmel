@@ -98,6 +98,25 @@ with st.expander('See lesion statistics:'):
             px.scatter_matrix(df[radiomics_features], labels=figure_labels)
             .update_layout(legend=top_h_legend, width=WIDTH / 2)
         )
+        
+    size = 1000
+        
+    ds = pd.DataFrame(
+        np.vstack(
+            (np.concatenate(
+                [np.random.normal(r.mean_suv_val, r.sd_suv_val, size)
+                 for _, r in df[['mean_suv_val', 'sd_suv_val']].iterrows()]),
+             np.concatenate(
+                [np.array([f'Lesion {lesion}'] * size) for lesion in range(df.shape[0])]))
+        ).T, columns=['value', 'distribution'])
+
+    ds['value'] = ds.value.astype(np.float32)
+
+    st.plotly_chart(
+        px.histogram(ds, x='value', color='distribution')
+        .update_layout(barmode='overlay', legend=top_h_legend, width=WIDTH)
+        .update_traces(opacity=0.5)
+    )
 
 con, col = st.columns(2)
 
@@ -110,7 +129,7 @@ if connectivity in ['distance', 'wasserstein']:
     if connectivity == 'distance':
         distance_metric = dm.selectbox('Metric', radiomics_features)
     
-    distance_threshold = dt.slider('Threshold', 0., 5., .2)
+    distance_threshold = dt.slider('Threshold', 0., 2., .2)
 
 num_nodes = df.shape[0]
 edge_index = []
