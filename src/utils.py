@@ -1,19 +1,22 @@
 import os
 
-from typing import List
+from typing import List, Tuple
+from collections.abc import Callable
 
 from itertools import permutations
-
-import datetime as dt
 
 import pandas as pd
 import numpy as np
 
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.base import BaseEstimator
-from sklearn.impute import SimpleImputer
+from scipy.stats import wasserstein_distance
 
-import mlflow
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer, make_column_selector
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.base import BaseEstimator
 
 import torch
 from torch_geometric.data import Data
@@ -35,119 +38,368 @@ FILES = dict(
     progression='melanoma_petct-exams_progression-status_2021-10-04_anonymized.csv')
 
 
-def create_dataset(
-    connectivity: str = 'organ',
-    filepath: str = '', timestamp: dt.datetime = dt.datetime.today(),
+def load_dataset(
+    connectivity: str = 'wasserstein', batch_size: int = 8,
+    test_size: float = 0.2, val_size: float = 0.1, seed: int = 27,
     verbose: int = 0
-):
-    # Fetch lesions datafile
-    lesions = pd.read_csv(os.path.join(filepath, FILES['lesions_file']))
-    lesions['study_phase'] = lesions.study_name.apply(extract_study_phase)
-    
-    # Compute TMTV by summing `vol_ccm` per study
-    labels = lesions.groupby(['gpcr_id', 'study_phase']) \
-        .vol_ccm.sum().to_frame('tmtv').reset_index()
+) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    """
+    Get training, validation, and testing DataLoaders.
+    Mainly used as a high-level data fetcher in the running script.
 
-    # Find id of each patient's baseline TMTV in `labels` DataFrame
-    baseline_idx = labels.groupby('gpcr_id').study_phase.idxmin().to_dict()
-    # Assign baseline TMTV value to each study
-    labels['baseline'] = labels.gpcr_id.apply(
-        lambda i: labels.loc[baseline_idx[i]].tmtv)
-    # Classify response following the TMTV value of each study
-    labels['response'] = labels.apply(classify_response, axis=1)
-    
-    # Creating post-1 dataset
-    # Add classified response to each lesion
-    df = lesions[lesions.study_phase == 1] \
-        .merge(labels[labels.study_phase == 1][['gpcr_id', 'response']], on='gpcr_id')
-    # Filter out baseline scans and unwanted features
-    df = df[df.response != 'baseline']
-    unwanted_features = ['study_name', 'roi_id', 'roi_name', 'lesion_label_id', 'study_phase']
-    df = df[[feature for feature in list(df.columns) if feature not in unwanted_features]]
+    Args:
+        connectivity (str, optional): node connectivity method.. Defaults to 'wasserstein'.
+        batch_size (int, optional): [description]. Defaults to 8.
+        test_size (float, optional): Ratio of test set. Defaults to 0.2.
+        val_size (float, optional): Ratio of validation set. Defaults to 0.1.
+        seed (int, optional): Random seed. Defaults to 27.
+        verbose (int, optional): tuneable parameter for output verbosity. Defaults to 1.
 
+    Returns:
+        Tuple[DataLoader, DataLoader, DataLoader]:
+            * loader_train (DataLoader): packaged training dataset.
+            * loader_val (DataLoader): packaged validation dataset.
+            * loader_test (DataLoader): packaged testing dataset.
+    """
+
+    labels, lesions, patients = fetch_data(verbose)
+    
+    X_train, X_val, X_test, y_train, y_val, y_test = \
+        preprocess(labels, lesions, patients,
+                   test_size=test_size, val_size=val_size, seed=seed,
+                   verbose=verbose)
+        
+    loader_train = create_dataset(X=X_train, Y=y_train,
+                                  batch_size=batch_size,
+                                  connectivity=connectivity, verbose=verbose)
+    loader_val = create_dataset(X=X_val, Y=y_val,
+                                batch_size=batch_size,
+                                connectivity=connectivity, verbose=verbose)
+    
+    # In the test loader we set the batch size to be
+    # equal to the size of the whole test set
+    loader_test = create_dataset(X=X_test, Y=y_test,
+                                 batch_size=len(y_test), shuffle=False,
+                                 connectivity=connectivity, verbose=verbose)
+    
     if verbose > 0:
-        print(f'Total patients with non-baseline post-1 studies: {len(df.gpcr_id.unique())}')
+        print('Final amount of datapoints \n' \
+              + f'\t Train: {len(loader_train.dataset)} \n' \
+              + f'\t Validation: {len(loader_val.dataset)} \n' \
+              + f'\t Test: {len(loader_test.dataset)}')
+
+    return loader_train, loader_val, loader_test
+
+
+def create_dataset(
+    X: pd.DataFrame, Y: pd.Series, batch_size: int = 8, shuffle: bool = True,
+    connectivity: str = 'wasserstein', distance: float = 0.5, verbose: int = 0
+) -> DataLoader:
+    """Packages preprocessed data and its labels into a `torch.utils.data.DataLoader`
+
+    Args:
+        X (pd.DataFrame): `gpcr_id` indexed datapoints (lesions)
+        Y (pd.Series): `gpcr_id` indexed labels. 1 is NPD.
+        batch_size (int, optional): DataLoader batch size. Defaults to 8.
+        shuffle (bool, optional): shuffle graphs in DataLoader. Defaults to True.
+        connectivity (str, optional): node connectivity method. Defaults to 'wasserstein'.
+        distance (float, optional): if `wasserstein` connectivity is chosen,
+            the threshold distance in order to create an edge between nodes. Defaults to 0.5.
+        verbose (int, optional): tuneable parameter for output verbosity.. Defaults to 0.
+
+    Raises:
+        ValueError: acceptable values for connectivity are: 'fully', 'organ', and 'wasserstein'
+
+    Returns:
+        DataLoader: packaged dataset within a DataLoader instance.
+    """
     
-    x_features = list(df.columns)
-    x_features.remove('response')
-    x_features.remove('gpcr_id')
-    x_features.remove('is_malignant')
-
-    x_features_categorical = ['pars_bodypart_petct', 'pars_region_petct',
-                              'pars_subregion_petct', 'pars_laterality_petct',
-                              'pars_classification_petct', 'assigned_organ']
-    x_features_numerical = ['vol_ccm', 'max_suv_val', 'mean_suv_val',
-                            'min_suv_val', 'sd_suv_val']
-
-    # Create one-hot encoder and standard scaler for node-level features
-    encoder = OneHotEncoder(drop='if_binary').fit(df[x_features_categorical])
-    scaler = StandardScaler().fit(df[x_features_numerical])
-
+    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['lesions']))
+    # Filter out benign lesions and non-post-1 studies
+    lesions = lesions[(lesions.pars_classification_petct != 'benign') & (lesions.study_name == 'post-01')]
+    
     dataset = []
+    skipped = 0
 
-    for patient in list(df.gpcr_id.unique()):
+    for patient in list(X.index.unique()):
 
         # Create patient sub-DataFrame of all his post-1 study lesions
-        pdf = df[df.gpcr_id == int(patient)].reset_index()
-
+        pdf = lesions[lesions.gpcr_id == patient].reset_index()
+        
+        # Sanity check
+        assert pdf.shape[0] == X[X.index == patient].shape[0], f'Unequal lesion count for patient {patient}'
+        
         num_nodes = pdf.shape[0]
         edge_index = []
+        
+        # Skip single-noded graphs
+        if num_nodes < 2:
+            skipped += 1
+            continue
 
-        # Connect lesions using different rhetorics
+        # Connect lesions using different methodologies
         if connectivity == 'organ':
+            # Connect all lesions that are assigned to the same organ
             for i in range(num_nodes):
                 source = pdf.loc[i].assigned_organ
                 targets = list(pdf[pdf.assigned_organ == source].index)
 
                 edge_index.extend([[i, j] for j in targets if i != j])
+                
         elif connectivity == 'fully':
+            # Create a fully-connected network representation
             edge_index = list(permutations(range(num_nodes), 2, ))
+            
+        elif connectivity == 'wasserstein':
+            # Use the mean and std of the SUV of each lesion to simulate SUV distributions (normal)
+            # and subsequently connect nodes with similar SUV distributions using the Wasserstein distance
+            # as a distance metric
+            for i in range(num_nodes):
+                source_mean, source_sd = pdf.loc[i].mean_suv_val, pdf.loc[i].sd_suv_val
+                source_distribution = np.random.normal(source_mean, source_sd, 1000)
+                
+                targets = [id for id, mu, sd in zip(pdf.index, pdf.mean_suv_val, pdf.sd_suv_val)
+                           if wasserstein_distance(source_distribution,
+                                                   np.random.normal(mu, sd, 1000)) < distance]
+
+                edge_index.extend([[i, j] for j in targets if i != j])
+            
         else:
             raise ValueError(f'Connectivity value not accepted: {connectivity}.'
-                             "Must be either 'fully' or 'organ'.")
+                             "Must be either 'fully', 'wasserstein', or 'organ'.")
 
-        edge_index = torch.tensor(edge_index).t()
-
-        x = torch.tensor(np.concatenate((
-            encoder.transform(pdf[x_features_categorical]).todense(),
-            scaler.transform(pdf[x_features_numerical])
-        ), axis=1).astype(np.float32))
-
-        y = pdf[pdf.response == 'response'].shape[0] / pdf.shape[0]
-
-        dataset.append(Data(x=x, edge_index=edge_index, num_nodes=num_nodes, y=int(y)))
-        
-    DATASET_PATH = os.path.join(DATA_DIR, f'checkpoints/dataset-{connectivity}.pt')
-    torch.save(dataset, DATASET_PATH)
-    mlflow.log_artifact(DATASET_PATH)
+        edge_index = torch.tensor(edge_index).t().long()
     
-    return dataset
+        x = torch.tensor(X.loc[patient].reset_index(drop=True).to_numpy().astype(np.float32))
+        y = torch.tensor(Y.loc[patient])
 
-
-def load_dataset(
-    connectivity: str = 'organ', batch_size: int = 8,
-    filepath: str = '', timestamp: dt.datetime = dt.datetime.today(),
-    verbose: int = 0
-):
-    
-    dataset = create_dataset(connectivity=connectivity,
-                             filepath=filepath, timestamp=timestamp, verbose=verbose)
+        dataset.append(Data(x=x, edge_index=edge_index, num_nodes=num_nodes, y=y))
         
-    idx_train_end = int(len(dataset) * .5)
-    idx_valid_end = int(len(dataset) * .75)
+    if verbose > 0:
+        print(f'Skipped {skipped} graphs as they have less than 2 nodes.')
+        
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
-    batch_test = len(dataset) - idx_valid_end
 
-    # In the test loader we set the natch size to be
-    # equal to the size of the whole test set
-    loader_train = DataLoader(dataset[:idx_train_end],
-                              batch_size=batch_size, shuffle=True)
-    loader_valid = DataLoader(dataset[idx_train_end:idx_valid_end],
-                              batch_size=batch_size, shuffle=True)
-    loader_test = DataLoader(dataset[idx_valid_end:],
-                             batch_size=batch_test, shuffle=False)
+class Preprocessor:
+    """Preprocessor class that acts as a BaseEstimator wrapper for preprocessing pipelining"""
+    
+    def __init__(self, pipe: BaseEstimator, feats_out_fn: Callable[[BaseEstimator], List[str]]) -> None:
+        """Constructor
 
-    return loader_train, loader_valid, loader_test
+        Args:
+            pipe (BaseEstimator): sklearn pipeline that should be fitted by training data and
+                should transform validation and testing data.
+            feature_callback (Callable[[BaseEstimator], List[str]]): function that yields list
+                feature names available on pipe output.
+        """
+        self.pipe = pipe
+        self.feats_out_fn = feats_out_fn
+        
+    def get_feature_names(self) -> List[str]:
+        """Yields list of feature names available on pipe output.
+
+        Returns:
+            List[str]: list of feature names available on pipe output.
+        """
+        return self.feats_out_fn(self.pipe)
+    
+    def fit(self, df: pd.DataFrame) -> None:
+        """Fitting method. To be used with training data `X_train`
+
+        Args:
+            df (pd.DataFrame): training data.
+        """
+        self.pipe.fit(df)
+    
+    def transform(self, df: pd.DataFrame, index: List = None, columns: List[str] = None) -> pd.DataFrame:
+        """Transformer method. To be used on training, validation, and testing data.
+
+        Args:
+            df (pd.DataFrame): input data.
+            index (List, optional): output `gpcr_id` index. Defaults to None. If None, will use `df.index`.
+            columns (List[str], optional): [description]. Defaults to None.
+                If None, will call `get_feature_names`.
+
+        Returns:
+            pd.DataFrame: output data.
+        """
+        if index is None:
+            index = df.index
+           
+        if columns is None:
+            columns = self.get_feature_names()
+    
+        return pd.DataFrame(self.pipe.transform(df), index=index, columns=columns)
+
+
+def preprocess(
+    labels: pd.Series, lesions: pd.DataFrame, patients: pd.DataFrame,
+    test_size: float = 0.2, val_size: float = 0.1, seed: int = 27, verbose: int = 1
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+    """
+    Preprocess filtered raw data into train, validation, and test splits.
+    Imputation, standardization, and one-hot encoding of features using sklearn pipelines.
+
+    Args:
+        labels (pd.Series): `gpcr_id` indexed Series with progression labels. 1 is NPD.
+        lesions (pd.DataFrame): gpcr_id` indexed lesion-level data.
+        patients (pd.DataFrame): `gpcr_id` indexed patient-level data including blood screens.
+        test_size (float, optional): Ratio of test set. Defaults to 0.2.
+        val_size (float, optional): Ratio of validation set. Defaults to 0.1.
+        seed (int, optional): Random seed. Defaults to 27.
+        verbose (int, optional): tuneable parameter for output verbosity. Defaults to 1.
+
+    Returns:
+        Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+            * X_train (pd.DataFrame): `gpcr_id` indexed training dataset.
+            * X_val (pd.DataFrame): `gpcr_id` indexed validation dataset.
+            * X_test (pd.DataFrame): `gpcr_id` indexed testing dataset.
+            * y_train (pd.Series): `gpcr_id` indexed training Series with progression labels. 1 is NPD.
+            * y_val (pd.Series): `gpcr_id` indexed validation Series with progression labels. 1 is NPD.
+            * y_test (pd.Series): `gpcr_id` indexed test Series with progression labels. 1 is NPD.
+    """
+    
+    I_train, I_test, y_train, y_test = \
+        train_test_split(labels.index, labels, test_size=test_size, random_state=seed)
+        
+    # Account for already taken up test size
+    val_size = val_size / (1 - test_size)
+    # Compute validation set indices
+    I_train, I_val, y_train, y_val = \
+        train_test_split(I_train, y_train, test_size=val_size, random_state=seed)
+        
+    lesions_pp = Preprocessor(
+        pipe=ColumnTransformer(
+            [('scaler', StandardScaler(), make_column_selector(dtype_include=np.number)),
+             ('one-hot', OneHotEncoder(), make_column_selector(dtype_include=object))]),
+        feats_out_fn=lambda c: c.transformers_[0][-1] + list(c.transformers_[1][1].categories_[0])
+    )
+    
+    patients_numerical = list(patients.select_dtypes(np.number).columns)
+    patients_categorical = list(patients.select_dtypes(object).columns)
+    patients_categorical.remove('immuno_therapy_type')
+
+    features_range = list(range(len(patients_numerical) + len(patients_categorical) + 1))
+    bp = np.cumsum([len(patients_numerical), len(patients_categorical), 1])
+
+    clf_patients = Pipeline([
+        ('imputers', ColumnTransformer([
+            ('median', SimpleImputer(strategy='median'), patients_numerical),
+            ('frequent', SimpleImputer(strategy='most_frequent'), patients_categorical)
+        ], remainder='passthrough')),
+        ('preprocess', ColumnTransformer([
+            ('scaler', StandardScaler(), features_range[0:bp[0]]),
+            ('one-hot', OneHotEncoder(drop='if_binary'), features_range[bp[0]:bp[1]]),
+            ('count-vec', CountVectorizer(analyzer=set), features_range[bp[1]:bp[2]][0])
+        ], remainder='passthrough')),
+    ])
+
+    patients_pp = Preprocessor(
+        pipe=clf_patients,
+        feats_out_fn=lambda c: (c.named_steps['imputers'].transformers_[0][2] \
+                                + c.named_steps['imputers'].transformers_[1][2] \
+                                + c.named_steps['preprocess'].transformers_[2][1].get_feature_names())
+    )
+
+    lesions_pp.fit(lesions.loc[I_train])
+
+    lesions_train = lesions_pp.transform(lesions.loc[I_train])
+    lesions_val = lesions_pp.transform(lesions.loc[I_val])
+    lesions_test = lesions_pp.transform(lesions.loc[I_test])
+    
+    patients_pp.fit(patients.loc[I_train])
+
+    patients_train = patients_pp.transform(patients.loc[I_train])
+    patients_val = patients_pp.transform(patients.loc[I_val])
+    patients_test = patients_pp.transform(patients.loc[I_test])
+    
+    X_train = pd.merge(lesions_train, patients_train, left_index=True, right_index=True)
+    X_val = pd.merge(lesions_val, patients_val, left_index=True, right_index=True)
+    X_test = pd.merge(lesions_test, patients_test, left_index=True, right_index=True)
+    
+    if verbose > 0:
+        print('Processed and split dataset into \n' \
+              + f'\t Train: {y_train.shape[0]} \n' \
+              + f'\t Validation: {y_val.shape[0]} \n' \
+              + f'\t Test: {y_test.shape[0]}')
+    
+    return X_train, X_val, X_test, y_train, y_val, y_test
+
+
+def fetch_data(verbose: int = 1) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+    """Fetch data from sources explicited in __file__ constants. First filtering of raw data.
+
+    Args:
+        verbose (int, optional): tuneable parameter for output verbosity. Defaults to 1.
+
+    Returns:
+        Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+            * labels (pd.Series): `gpcr_id` indexed Series with progression labels. 1 is NPD.
+            * lesions (pd.DataFrame): `gpcr_id` indexed lesion-level data.
+            * patients (pd.DataFrame): `gpcr_id` indexed patient-level data including blood screens.
+            
+    """
+    # LESIONS
+    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['lesions']))
+    # Filter out benign lesions and non-post-1 studies
+    lesions = lesions[(lesions.pars_classification_petct != 'benign') & (lesions.study_name == 'post-01')]
+    # Keep only radiomics features and assigned organ
+    radiomics_features = ['vol_ccm', 'max_suv_val', 'mean_suv_val', 'min_suv_val', 'sd_suv_val']
+    lesions = lesions[['gpcr_id', 'study_name', *radiomics_features, 'assigned_organ']]
+
+    if verbose > 0:
+        print(f'Post-1 study lesions extracted for {len(lesions.gpcr_id.unique())} patients')
+
+    # LABELS
+    progression = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES['progression']))
+    progression['prediction_score'] = progression.prediction_score.eq('NPD').mul(1)
+
+    # We need to filter out studies who do not have an associated progression label
+    # Add prediction score label from progression df
+    lesions = lesions.merge(progression[['gpcr_id', 'study_name', 'prediction_score']],
+                            on=['gpcr_id', 'study_name'], how='inner')
+    lesions = lesions[lesions.prediction_score.notna()]
+    lesions.drop(columns='prediction_score', inplace=True)
+
+    if verbose > 0:
+        print(f'Post-1 study labels added for {len(lesions.gpcr_id.unique())} patients')
+        
+    # PATIENT-LEVEL
+    patients = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['patients']))
+    # Fix encoding for 90+ patients
+    patients['age_at_treatment_start_in_years'] = \
+        patients.age_at_treatment_start_in_years.apply(lambda a: 90 if a == '90 or older' else int(a))
+
+    blood = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES['blood']))
+    blood.rename(columns={feature: feature.replace('-', '_') for feature in blood.columns}, inplace=True)
+    # Listify immunotherapy type to create multi-feature encoding
+    blood['immuno_therapy_type'] = blood.immuno_therapy_type \
+        .apply(lambda t: ['ipi', 'nivo'] if t == 'ipinivo' else [t])
+
+    # Filter in the patient information that we want access to
+    patient_features = ['age_at_treatment_start_in_years']
+    blood_features = ['sex', 'bmi', 'performance_score_ecog', 'ldh_sang_ul', 'neutro_absolus_gl',
+                      'eosini_absolus_gl', 'leucocytes_sang_gl', 'NRAS_MUTATION', 'BRAF_MUTATION',
+                      'immuno_therapy_type']
+
+    patients = patients[['gpcr_id', *patient_features]]
+    blood = blood[['gpcr_id', *blood_features]]
+    
+    potential_patients = list(set(lesions.gpcr_id) & set(patients.gpcr_id))
+    progression.set_index('gpcr_id', inplace=True)
+    labels = progression[progression.study_name == 'post-01'].loc[potential_patients].prediction_score
+
+    if verbose > 0:
+        print(f'The intersection of datasets showed {len(potential_patients)} potential datapoints.')
+    
+    # Prepare for return
+    lesions.drop(columns='study_name', inplace=True)
+    lesions.set_index('gpcr_id', inplace=True)
+    patients = patients.merge(blood, on='gpcr_id', how='inner')
+    patients.set_index('gpcr_id', inplace=True)
+
+    return labels, lesions, patients
 
 
 def classify_response(row):
@@ -191,48 +443,3 @@ def format_number_header(heading: str, spotlight: str, footer: str) -> str:
             <div class="number-footer"> {footer} </div>
         </div>
     """
-
-
-def preprocess(
-    df: pd.DataFrame,
-    features_categorical: List[str] = [], features_numerical: List[str] = [],
-    training: bool = True, index: str = 'gpcr_id',
-    imputer_categorical: BaseEstimator = SimpleImputer(strategy='most_frequent'),
-    imputer_numerical: BaseEstimator = SimpleImputer(strategy='median'),
-    estimator_categorical: BaseEstimator = OneHotEncoder(drop='if_binary'),
-    estimator_numerical: BaseEstimator = StandardScaler(),
-):
-    
-    processed = df[[index]]
-    columns = [index]
-    
-    if len(features_categorical) > 0:
-        if training:
-            imputer_categorical.fit(df[features_categorical])
-            estimator_categorical.fit(df[features_categorical])
-            
-        processed = np.append(processed,
-                              estimator_categorical.transform(
-                                  imputer_categorical.transform(
-                                      df[features_categorical])
-                              ).todense(), axis=1)
-        
-        columns.extend(estimator_categorical.get_feature_names())
-
-    if len(features_numerical) > 0:
-        if training:
-            imputer_numerical.fit(df[features_numerical])
-            estimator_numerical.fit(df[features_numerical])
-            
-        processed = np.append(processed,
-                              estimator_numerical.transform(
-                                  imputer_numerical.transform(
-                                      df[features_numerical])
-                              ), axis=1)
-                       
-        columns.extend(features_numerical)
-    
-    processed = pd.DataFrame(processed, columns=columns)
-    
-    return processed, \
-        imputer_categorical, imputer_numerical, estimator_categorical, estimator_numerical
