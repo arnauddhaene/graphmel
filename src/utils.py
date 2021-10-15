@@ -26,7 +26,8 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir)
 DATA_DIR = os.path.join(BASE_DIR, 'data/')
 ASSETS_DIR = os.path.join(BASE_DIR, 'assets/')
 
-CONNECTION_DIR = '/Volumes/lts4-immuno/'
+# CONNECTION_DIR = '/Volumes/lts4-immuno/'
+CONNECTION_DIR = '/Users/arnauddhaene/Downloads/'
 DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04']
 
 FILES = dict(
@@ -162,7 +163,7 @@ def create_dataset(
                            if wasserstein_distance(source_distribution,
                                                    np.random.normal(mu, sd, 1000)) < distance]
 
-                edge_index.extend([[i, j] for j in targets if i != j])
+                edge_index.extend([[i, j] for j in targets])
             
         else:
             raise ValueError(f'Connectivity value not accepted: {connectivity}.'
@@ -184,7 +185,7 @@ def create_dataset(
 class Preprocessor:
     """Preprocessor class that acts as a BaseEstimator wrapper for preprocessing pipelining"""
     
-    def __init__(self, pipe: BaseEstimator, feats_out_fn: Callable[[BaseEstimator], List[str]]) -> None:
+    def __init__(self, pipe: BaseEstimator, feats_out_fn: Callable) -> None:
         """Constructor
 
         Args:
