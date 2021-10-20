@@ -57,7 +57,6 @@ def run(model, connectivity,
     timestamp = dt.datetime.today()
     mlflow.start_run(experiment_id=experiment.experiment_id)
     
-    mlflow.log_param('Architecture', model)
     mlflow.log_param('Learning Rate', lr)
     mlflow.log_param('Weight Decay', decay)
     mlflow.log_param('Batch Size', batch_size)
@@ -69,7 +68,7 @@ def run(model, connectivity,
     model_args = dict(
         num_classes=2,
         hidden_dim=hidden_dim,
-        node_features_dim=37)
+        node_features_dim=43)
     
     if model == 'GNN':
         model = GNN(**model_args).to(device)
@@ -102,7 +101,7 @@ def run(model, connectivity,
                      dense=model.is_dense(), verbose=verbose)
     
     start = time.time()
-        
+    
     train(model, loader_train, loader_valid,
           learning_rate=lr, weight_decay=decay, epochs=epochs, device=device,
           verbose=verbose)

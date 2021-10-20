@@ -12,7 +12,7 @@ from metrics import evaluate_accuracy
 def train(
     model: nn.Module, loader_train: DataLoader, loader_valid: DataLoader,
     learning_rate: float = 1e-2, weight_decay: float = 1e-3, gamma: float = .5,
-    epochs: int = 25, device=None, dense: bool = False,
+    epochs: int = 25, device=None, dense: bool = None,
     verbose: int = 0
 ) -> None:
     """
@@ -26,12 +26,17 @@ def train(
         weight_decay (float, optional): weight decay for Adam. Defaults to 1e-3.
         epochs (int, optional): number of epochs. Defaults to 25.
         metrics (metrics.TrainingMetrics): metrics object to store results in
-        dense (bool, optional): train model using dense representation
+        dense (bool), optional:
+            train model using dense representation, by default None.
+            if None, `model.is_dense()` is called
         verbose (int, optional): print info. Defaults to 0.
 
     Returns:
         TrainingMetrics: metrics of training run
     """
+    
+    if dense is None:
+        dense = model.is_dense()
 
     criterion = nn.NLLLoss()
     optimizer = torch.optim.Adam(

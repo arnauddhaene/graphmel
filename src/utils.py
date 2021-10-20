@@ -196,7 +196,7 @@ def create_dataset(
 
         dataset.append(to_dense(data) if dense else data)
         
-    if verbose > 0:
+    if verbose > 0 and skipped > 0:
         print(f'Skipped {skipped} graphs as they have less than 2 nodes.')
         
     return DenseDataLoader(dataset, batch_size=batch_size, shuffle=shuffle) if dense else \
@@ -294,7 +294,8 @@ def preprocess(
     lesions_pp = Preprocessor(
         pipe=ColumnTransformer(
             [('scaler', StandardScaler(), make_column_selector(dtype_include=np.number)),
-             ('one-hot', OneHotEncoder(), make_column_selector(dtype_include=object))]),
+             ('one-hot', OneHotEncoder(),
+              make_column_selector(dtype_include=object))]),
         feats_out_fn=lambda c: c.transformers_[0][-1] + list(c.transformers_[1][1].categories_[0])
     )
     
@@ -312,7 +313,8 @@ def preprocess(
         ], remainder='passthrough')),
         ('preprocess', ColumnTransformer([
             ('scaler', StandardScaler(), features_range[0:bp[0]]),
-            ('one-hot', OneHotEncoder(drop='if_binary'), features_range[bp[0]:bp[1]]),
+            ('one-hot', OneHotEncoder(handle_unknown='ignore'),
+             features_range[bp[0]:bp[1]]),
             ('count-vec', CountVectorizer(analyzer=set), features_range[bp[1]:bp[2]][0])
         ], remainder='passthrough')),
     ])
@@ -320,7 +322,7 @@ def preprocess(
     patients_pp = Preprocessor(
         pipe=clf_patients,
         feats_out_fn=lambda c: (c.named_steps['imputers'].transformers_[0][2] \
-                                + c.named_steps['imputers'].transformers_[1][2] \
+                                + list(c.named_steps['preprocess'].transformers_[1][1].get_feature_names()) \
                                 + c.named_steps['preprocess'].transformers_[2][1].get_feature_names())
     )
 
@@ -366,6 +368,10 @@ def fetch_data(verbose: int = 1) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
     # Filter out benign lesions and non-post-1 studies
     lesions = lesions[(lesions.pars_classification_petct != 'benign') & (lesions.study_name == 'post-01')]
+    # Filter out single-lesion studies
+    multiple_lesions = lesions.groupby('gpcr_id').size().gt(1)
+    multiple_lesions = multiple_lesions.index[multiple_lesions.values]
+    lesions = lesions[lesions.gpcr_id.isin(multiple_lesions)]
     # Keep only radiomics features and assigned organ
     radiomics_features = ['vol_ccm', 'max_suv_val', 'mean_suv_val', 'min_suv_val', 'sd_suv_val']
     lesions = lesions[['gpcr_id', 'study_name', *radiomics_features, 'assigned_organ']]

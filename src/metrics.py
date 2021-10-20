@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 
 
-def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = False,
+def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = None,
                       device=None):
     """Compute accuracy of input model over all samples from the loader.
     
@@ -10,7 +10,7 @@ def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = 
         model (torch.nn.Module): NN model
         loader (DataLoader): Data loader to evaluate on
         dense (bool), optional:
-            train model using dense representation
+            train model using dense representation, by default None.
             if None, `model.is_dense()` is called
         device (torch.device), optional:
             Device to use, by default None.
