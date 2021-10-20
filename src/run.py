@@ -11,13 +11,14 @@ from metrics import evaluate_accuracy
 from models.gnn import GNN
 from models.gat import GAT
 from models.gin import GIN
+from models.diffpool import DiffPool
 from train import train
 from utils import load_dataset, ASSETS_DIR
 
 
 @click.command()
 @click.option('--model', default='GNN',
-              type=click.Choice(['GNN', 'GAT', 'GIN'], case_sensitive=False),
+              type=click.Choice(['GNN', 'GAT', 'GIN', 'DiffPool'], case_sensitive=False),
               help="Model architecture choice.")
 @click.option('--connectivity', default='wasserstein',
               type=click.Choice(['fully', 'organ', 'wasserstein'], case_sensitive=False),
@@ -64,36 +65,23 @@ def run(model, connectivity,
     mlflow.log_param('Hidden dimensions', hidden_dim)
         
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    if verbose > 1:
-        print(f"Creating {connectivity}-connected graph representations and storing "
-              f"into DataLoaders with batch size {batch_size}...")
-    
-    loader_train, loader_valid, loader_test = \
-        load_dataset(connectivity=connectivity, batch_size=batch_size,
-                     test_size=test_size, val_size=val_size, seed=seed,
-                     verbose=verbose)
+        
+    model_args = dict(
+        num_classes=2,
+        hidden_dim=hidden_dim,
+        node_features_dim=37)
     
     if model == 'GNN':
-        model = GNN(
-            num_classes=2,
-            hidden_dim=hidden_dim,
-            node_features_dim=31,
-        ).to(device)
+        model = GNN(**model_args).to(device)
         
     elif model == 'GAT':
-        model = GAT(
-            num_classes=2,
-            hidden_dim=hidden_dim,
-            node_features_dim=31,
-        ).to(device)
+        model = GAT(**model_args).to(device)
+        
+    elif model == 'DiffPool':
+        model = DiffPool(**model_args).to(device)
         
     elif model == 'GIN':
-        model = GIN(
-            num_classes=2,
-            hidden_dim=hidden_dim,
-            node_features_dim=31,
-        ).to(device)
+        model = GIN(**model_args).to(device)
     
     else:
         raise ValueError(f'Could not instanciate {model} model')
@@ -102,6 +90,16 @@ def run(model, connectivity,
         print(f"{model} instanciated with {model.param_count()} parameters.")
         
     mlflow.log_param('Model', model)
+    mlflow.log_param('Weights', model.param_count())
+    
+    if verbose > 1:
+        print(f"Creating {connectivity}-connected graph representations and storing "
+              f"into DataLoaders with batch size {batch_size}...")
+    
+    loader_train, loader_valid, loader_test = \
+        load_dataset(connectivity=connectivity, batch_size=batch_size,
+                     test_size=test_size, val_size=val_size, seed=seed,
+                     dense=model.is_dense(), verbose=verbose)
     
     start = time.time()
         

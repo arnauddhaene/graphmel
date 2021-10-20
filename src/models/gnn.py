@@ -2,10 +2,10 @@ from torch.nn import Linear, LogSoftmax
 import torch.nn.functional as F
 from torch_geometric.nn import GraphConv, global_add_pool
 
-from models.custom import NamedModule, SizeableModule
+from models.custom import SparseModule
 
 
-class GNN(NamedModule, SizeableModule):
+class GNN(SparseModule):
     def __init__(
         self,
         num_classes: int,

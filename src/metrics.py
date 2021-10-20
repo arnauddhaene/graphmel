@@ -2,20 +2,27 @@ import torch
 from torch.utils.data import DataLoader
 
 
-def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, device=None):
+def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = False,
+                      device=None):
     """Compute accuracy of input model over all samples from the loader.
     
     Args:
         model (torch.nn.Module): NN model
         loader (DataLoader): Data loader to evaluate on
+        dense (bool), optional:
+            train model using dense representation
+            if None, `model.is_dense()` is called
         device (torch.device), optional:
             Device to use, by default None.
-            If None uses cuda if available else cpu.
+            if None uses cuda if available else cpu.
     Returns:
         float: Accuracy in [0,1]
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+    if dense is None:
+        dense = model.is_dense()
 
     model.eval()
 
@@ -24,7 +31,12 @@ def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, device=None):
 
     for data in loader:  # Iterate in batches over the training/test dataset.
         data.to(device)
-        out = model(data.x, data.edge_index, data.batch)
+        
+        if dense:
+            out, _, _ = model(data.x, data.adj, data.mask)
+        else:
+            out = model(data.x, data.edge_index, data.batch)
+            
         y_preds.append(out.argmax(dim=1))  # Use the class with highest probability.
         y_trues.append(data.y)  # Check against ground-truth labels.
 

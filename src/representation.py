@@ -1,5 +1,7 @@
 import os
 
+from typing import List
+
 from itertools import permutations
 
 import pandas as pd
@@ -7,6 +9,10 @@ import numpy as np
 import networkx as nx
 
 from scipy.stats import wasserstein_distance
+
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.base import BaseEstimator
+from sklearn.impute import SimpleImputer
 
 import torch
 from torch_geometric.data import Data
@@ -18,7 +24,7 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.io as pio
 
-from utils import DATA_FOLDERS, FILES, ASSETS_DIR, extract_study_phase, preprocess
+from utils import DATA_FOLDERS, FILES, ASSETS_DIR, extract_study_phase
 
 
 pio.templates.default = 'seaborn'
@@ -29,6 +35,51 @@ figure_labels = {
     **{f'{metric}_suv_val': f'{metric.capitalize()} SUV' for metric in ['max', 'mean', 'min', 'sd']}
 }
 WIDTH = 900
+
+
+def preprocess(
+    df: pd.DataFrame,
+    features_categorical: List[str] = [], features_numerical: List[str] = [],
+    training: bool = True, index: str = 'gpcr_id',
+    imputer_categorical: BaseEstimator = SimpleImputer(strategy='most_frequent'),
+    imputer_numerical: BaseEstimator = SimpleImputer(strategy='median'),
+    estimator_categorical: BaseEstimator = OneHotEncoder(drop='if_binary'),
+    estimator_numerical: BaseEstimator = StandardScaler(),
+):
+    
+    processed = df[[index]]
+    columns = [index]
+    
+    if len(features_categorical) > 0:
+        if training:
+            imputer_categorical.fit(df[features_categorical])
+            estimator_categorical.fit(df[features_categorical])
+            
+        processed = np.append(processed,
+                              estimator_categorical.transform(
+                                  imputer_categorical.transform(
+                                      df[features_categorical])
+                              ).todense(), axis=1)
+        
+        columns.extend(estimator_categorical.get_feature_names())
+
+    if len(features_numerical) > 0:
+        if training:
+            imputer_numerical.fit(df[features_numerical])
+            estimator_numerical.fit(df[features_numerical])
+            
+        processed = np.append(processed,
+                              estimator_numerical.transform(
+                                  imputer_numerical.transform(
+                                      df[features_numerical])
+                              ), axis=1)
+                       
+        columns.extend(features_numerical)
+    
+    processed = pd.DataFrame(processed, columns=columns)
+    
+    return processed, \
+        imputer_categorical, imputer_numerical, estimator_categorical, estimator_numerical
 
 st.set_page_config(
     layout="centered",
