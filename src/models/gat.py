@@ -2,10 +2,10 @@ from torch.nn import Linear, LogSoftmax
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv, global_add_pool
 
-from models.custom import NamedModule, SizeableModule
+from models.custom import SparseModule
 
 
-class GAT(NamedModule, SizeableModule):
+class GAT(SparseModule):
     def __init__(
         self,
         num_classes: int,
@@ -33,7 +33,9 @@ class GAT(NamedModule, SizeableModule):
         x = F.relu(self.conv3(x, edge_index))
         x = F.relu(self.conv4(x, edge_index))
         x = F.relu(self.conv5(x, edge_index))
+        
         x = global_add_pool(x, batch)
+        
         x = F.relu(self.fc1(x))
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.fc2(x)

@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 
-class SizeableModule(nn.Module):
+class BaseModule(nn.Module):
     
     def __init(self):
         super().__init__()
@@ -13,18 +13,33 @@ class SizeableModule(nn.Module):
     def param_count(self) -> int:
         """Parameter counter"""
         return sum(param.numel() for param in self.parameters())
-
-
-class NamedModule(nn.Module):
     
+    def __str__(self):
+        raise NotImplementedError
+
+    
+class DenseModule(BaseModule):
+
     def __init(self):
         super().__init__()
         
     def forward(self, x: torch.tensor) -> torch.tensor:
         raise NotImplementedError
     
-    def __str__(self):
+    def is_dense(self):
+        return True
+
+
+class SparseModule(BaseModule):
+
+    def __init(self):
+        super().__init__()
+        
+    def forward(self, x: torch.tensor) -> torch.tensor:
         raise NotImplementedError
+    
+    def is_dense(self):
+        return False
     
     
 class WeightInitializableModule(nn.Module):

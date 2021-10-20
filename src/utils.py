@@ -20,7 +20,8 @@ from sklearn.base import BaseEstimator
 
 import torch
 from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+from torch_geometric.loader import DataLoader, DenseDataLoader
+from torch_geometric.transforms import ToDense
 
 BASE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir)
 DATA_DIR = os.path.join(BASE_DIR, 'data/')
@@ -28,21 +29,31 @@ ASSETS_DIR = os.path.join(BASE_DIR, 'assets/')
 
 # CONNECTION_DIR = '/Volumes/lts4-immuno/'
 CONNECTION_DIR = '/Users/arnauddhaene/Downloads/'
-DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04']
+DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04', 'data_2021-10-12']
 
-FILES = dict(
-    lesions='melanoma_lesion-info_organ-overlap_2021-09-17_anonymized_cleaned_all.csv',
-    lesion_mapping='melanoma_lesion_mapping_2021-09-20_anonymized.csv',
-    patients='melanoma_patient-level_summary_anonymized.csv',
-    studies='melanoma_study_level_summary_anonymized.csv',
-    blood='melanoma_info_patient-treatment-blood-mutation_2021-10-04_anonymized.csv',
-    progression='melanoma_petct-exams_progression-status_2021-10-04_anonymized.csv')
+FILES = {
+    'data_2021-09-20': dict(
+        lesions='melanoma_lesion-info_organ-overlap_2021-09-17_anonymized_cleaned_all.csv',
+        lesion_mapping='melanoma_lesion_mapping_2021-09-20_anonymized.csv',
+        patients='melanoma_patient-level_summary_anonymized.csv',
+        studies='melanoma_study_level_summary_anonymized.csv'
+    ),
+    'data_2021-10-04': dict(
+        blood='melanoma_info_patient-treatment-blood-mutation_2021-10-04_anonymized.csv',
+        progression='melanoma_petct-exams_progression-status_2021-10-04_anonymized.csv'
+    ),
+    'data_2021-10-12': dict(
+        lesions='melanoma_lesion-info_organ-overlap_2021-10-12_anonymized_cleaned_all.csv',
+        patients='melanoma_patient-level_summary_anonymized.csv',
+        studies='melanoma_study_level_summary_anonymized.csv'
+    )
+}
 
 
 def load_dataset(
     connectivity: str = 'wasserstein', batch_size: int = 8,
     test_size: float = 0.2, val_size: float = 0.1, seed: int = 27,
-    verbose: int = 0
+    dense: bool = False, verbose: int = 0
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
     Get training, validation, and testing DataLoaders.
@@ -54,6 +65,7 @@ def load_dataset(
         test_size (float, optional): Ratio of test set. Defaults to 0.2.
         val_size (float, optional): Ratio of validation set. Defaults to 0.1.
         seed (int, optional): Random seed. Defaults to 27.
+        dense (bool, optional): Output a DenseDataLoader
         verbose (int, optional): tuneable parameter for output verbosity. Defaults to 1.
 
     Returns:
@@ -70,37 +82,39 @@ def load_dataset(
                    test_size=test_size, val_size=val_size, seed=seed,
                    verbose=verbose)
         
-    loader_train = create_dataset(X=X_train, Y=y_train,
+    loader_train = create_dataset(X=X_train, Y=y_train, dense=dense,
                                   batch_size=batch_size,
                                   connectivity=connectivity, verbose=verbose)
-    loader_val = create_dataset(X=X_val, Y=y_val,
+    loader_val = create_dataset(X=X_val, Y=y_val, dense=dense,
                                 batch_size=batch_size,
                                 connectivity=connectivity, verbose=verbose)
     
     # In the test loader we set the batch size to be
     # equal to the size of the whole test set
-    loader_test = create_dataset(X=X_test, Y=y_test,
+    loader_test = create_dataset(X=X_test, Y=y_test, dense=dense,
                                  batch_size=len(y_test), shuffle=False,
                                  connectivity=connectivity, verbose=verbose)
     
     if verbose > 0:
         print('Final amount of datapoints \n' \
-              + f'\t Train: {len(loader_train.dataset)} \n' \
-              + f'\t Validation: {len(loader_val.dataset)} \n' \
-              + f'\t Test: {len(loader_test.dataset)}')
+              + f'  Train: {len(loader_train.dataset)} \n' \
+              + f'  Validation: {len(loader_val.dataset)} \n' \
+              + f'  Test: {len(loader_test.dataset)}')
 
     return loader_train, loader_val, loader_test
 
 
 def create_dataset(
-    X: pd.DataFrame, Y: pd.Series, batch_size: int = 8, shuffle: bool = True,
-    connectivity: str = 'wasserstein', distance: float = 0.5, verbose: int = 0
+    X: pd.DataFrame, Y: pd.Series, dense: bool = False, batch_size: int = 8,
+    shuffle: bool = True, connectivity: str = 'wasserstein',
+    distance: float = 0.5, verbose: int = 0
 ) -> DataLoader:
     """Packages preprocessed data and its labels into a `torch.utils.data.DataLoader`
 
     Args:
         X (pd.DataFrame): `gpcr_id` indexed datapoints (lesions)
         Y (pd.Series): `gpcr_id` indexed labels. 1 is NPD.
+        dense (bool, optional): Output a DenseDataLoader
         batch_size (int, optional): DataLoader batch size. Defaults to 8.
         shuffle (bool, optional): shuffle graphs in DataLoader. Defaults to True.
         connectivity (str, optional): node connectivity method. Defaults to 'wasserstein'.
@@ -115,12 +129,16 @@ def create_dataset(
         DataLoader: packaged dataset within a DataLoader instance.
     """
     
-    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['lesions']))
+    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
     # Filter out benign lesions and non-post-1 studies
     lesions = lesions[(lesions.pars_classification_petct != 'benign') & (lesions.study_name == 'post-01')]
     
     dataset = []
     skipped = 0
+    
+    if dense:
+        max_num_nodes = lesions.groupby('gpcr_id').size().max()
+        to_dense = ToDense(max_num_nodes)
 
     for patient in list(X.index.unique()):
 
@@ -174,12 +192,15 @@ def create_dataset(
         x = torch.tensor(X.loc[patient].reset_index(drop=True).to_numpy().astype(np.float32))
         y = torch.tensor(Y.loc[patient])
 
-        dataset.append(Data(x=x, edge_index=edge_index, num_nodes=num_nodes, y=y))
+        data = Data(x=x, edge_index=edge_index, num_nodes=num_nodes, y=y.reshape(-1))
+
+        dataset.append(to_dense(data) if dense else data)
         
     if verbose > 0:
         print(f'Skipped {skipped} graphs as they have less than 2 nodes.')
         
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    return DenseDataLoader(dataset, batch_size=batch_size, shuffle=shuffle) if dense else \
+        DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
 
 class Preprocessor:
@@ -236,7 +257,7 @@ class Preprocessor:
 
 def preprocess(
     labels: pd.Series, lesions: pd.DataFrame, patients: pd.DataFrame,
-    test_size: float = 0.2, val_size: float = 0.1, seed: int = 27, verbose: int = 1
+    test_size: float = 0.2, val_size: float = 0.2, seed: int = 27, verbose: int = 1
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
     """
     Preprocess filtered raw data into train, validation, and test splits.
@@ -278,7 +299,7 @@ def preprocess(
     )
     
     patients_numerical = list(patients.select_dtypes(np.number).columns)
-    patients_categorical = list(patients.select_dtypes(object).columns)
+    patients_categorical = list(patients.select_dtypes([bool, object]).columns)
     patients_categorical.remove('immuno_therapy_type')
 
     features_range = list(range(len(patients_numerical) + len(patients_categorical) + 1))
@@ -321,9 +342,9 @@ def preprocess(
     
     if verbose > 0:
         print('Processed and split dataset into \n' \
-              + f'\t Train: {y_train.shape[0]} \n' \
-              + f'\t Validation: {y_val.shape[0]} \n' \
-              + f'\t Test: {y_test.shape[0]}')
+              + f'  Train: {y_train.shape[0]} \n' \
+              + f'  Validation: {y_val.shape[0]} \n' \
+              + f'  Test: {y_test.shape[0]}')
     
     return X_train, X_val, X_test, y_train, y_val, y_test
 
@@ -342,7 +363,7 @@ def fetch_data(verbose: int = 1) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
             
     """
     # LESIONS
-    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['lesions']))
+    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
     # Filter out benign lesions and non-post-1 studies
     lesions = lesions[(lesions.pars_classification_petct != 'benign') & (lesions.study_name == 'post-01')]
     # Keep only radiomics features and assigned organ
@@ -353,26 +374,27 @@ def fetch_data(verbose: int = 1) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
         print(f'Post-1 study lesions extracted for {len(lesions.gpcr_id.unique())} patients')
 
     # LABELS
-    progression = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES['progression']))
-    progression['prediction_score'] = progression.prediction_score.eq('NPD').mul(1)
+    progression = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1],
+                                           FILES[DATA_FOLDERS[1]]['progression']))
+    progression['pseudorecist'] = progression.pseudorecist.eq('NPD').mul(1)
 
     # We need to filter out studies who do not have an associated progression label
     # Add prediction score label from progression df
-    lesions = lesions.merge(progression[['gpcr_id', 'study_name', 'prediction_score']],
+    lesions = lesions.merge(progression[['gpcr_id', 'study_name', 'pseudorecist']],
                             on=['gpcr_id', 'study_name'], how='inner')
-    lesions = lesions[lesions.prediction_score.notna()]
-    lesions.drop(columns='prediction_score', inplace=True)
+    lesions = lesions[lesions.pseudorecist.notna()]
+    lesions.drop(columns='pseudorecist', inplace=True)
 
     if verbose > 0:
         print(f'Post-1 study labels added for {len(lesions.gpcr_id.unique())} patients')
         
     # PATIENT-LEVEL
-    patients = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['patients']))
+    patients = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['patients']))
     # Fix encoding for 90+ patients
     patients['age_at_treatment_start_in_years'] = \
         patients.age_at_treatment_start_in_years.apply(lambda a: 90 if a == '90 or older' else int(a))
 
-    blood = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES['blood']))
+    blood = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES[DATA_FOLDERS[1]]['blood']))
     blood.rename(columns={feature: feature.replace('-', '_') for feature in blood.columns}, inplace=True)
     # Listify immunotherapy type to create multi-feature encoding
     blood['immuno_therapy_type'] = blood.immuno_therapy_type \
@@ -382,14 +404,22 @@ def fetch_data(verbose: int = 1) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     patient_features = ['age_at_treatment_start_in_years']
     blood_features = ['sex', 'bmi', 'performance_score_ecog', 'ldh_sang_ul', 'neutro_absolus_gl',
                       'eosini_absolus_gl', 'leucocytes_sang_gl', 'NRAS_MUTATION', 'BRAF_MUTATION',
-                      'immuno_therapy_type']
+                      'immuno_therapy_type', 'lympho_absolus_gl', 'concomittant_tvec',
+                      'concomittant_LAG3', 'prior_targeted_therapy', 'prior_treatment',
+                      'nivo_maintenance']
+    
+    # Transform all one-hot encoded features into True/False to avoid scaler
+    for feature in blood_features:
+        values = blood[feature].value_counts().keys()
+        if len(values) == 2 and all(values == [0, 1]):
+            blood[feature] = blood[feature].astype(bool)
 
     patients = patients[['gpcr_id', *patient_features]]
     blood = blood[['gpcr_id', *blood_features]]
     
     potential_patients = list(set(lesions.gpcr_id) & set(patients.gpcr_id))
     progression.set_index('gpcr_id', inplace=True)
-    labels = progression[progression.study_name == 'post-01'].loc[potential_patients].prediction_score
+    labels = progression[progression.study_name == 'post-01'].loc[potential_patients].pseudorecist
 
     if verbose > 0:
         print(f'The intersection of datasets showed {len(potential_patients)} potential datapoints.')

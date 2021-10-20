@@ -12,7 +12,7 @@ from metrics import evaluate_accuracy
 def train(
     model: nn.Module, loader_train: DataLoader, loader_valid: DataLoader,
     learning_rate: float = 1e-2, weight_decay: float = 1e-3, gamma: float = .5,
-    epochs: int = 25, device=None,
+    epochs: int = 25, device=None, dense: bool = False,
     verbose: int = 0
 ) -> None:
     """
@@ -26,6 +26,7 @@ def train(
         weight_decay (float, optional): weight decay for Adam. Defaults to 1e-3.
         epochs (int, optional): number of epochs. Defaults to 25.
         metrics (metrics.TrainingMetrics): metrics object to store results in
+        dense (bool, optional): train model using dense representation
         verbose (int, optional): print info. Defaults to 0.
 
     Returns:
@@ -43,13 +44,19 @@ def train(
         
         for batch in tqdm(loader_train, leave=False):
             batch.to(device)
-                    
-            output = model(batch.x, batch.edge_index, batch.batch)
+            
+            if dense:
+                output, _, _ = model(batch.x, batch.adj, batch.mask)
+            else:
+                output = model(batch.x, batch.edge_index, batch.batch)
+            
             loss = criterion(output, batch.y.flatten())
     
             optimizer.zero_grad()
-            epoch_loss += loss.item()
+            
             loss.backward()
+            epoch_loss += batch.y.size(0) * loss.item()
+            
             optimizer.step()
             
         acc_train = evaluate_accuracy(model, loader_train)
