@@ -1,5 +1,9 @@
+import pandas as pd
+
 import torch
 from torch.utils.data import DataLoader
+
+import mlflow
 
 
 def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = None,
@@ -44,3 +48,37 @@ def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = 
     y_true = torch.cat(y_trues).flatten()
 
     return torch.sum(y_pred == y_true).item() / len(y_true)
+
+
+class TrainingMetrics():
+
+    def __init__(self):
+        
+        self.run = 0
+        self.storage = []
+    
+    def log_metric(self, metric: str, value: float, step: int = 0):
+        
+        self.storage.append(dict(metric=metric, value=value, step=step, run=self.run))
+    
+    def incr_run(self):
+        
+        self.run += 1
+    
+    def set_run(self, run: int = 0):
+        
+        self.run = run
+    
+    def send_log(self):
+    
+        df = pd.DataFrame(self.storage)
+        
+        mean = df.groupby(['metric', 'step']).value.mean().reset_index()
+        
+        for _, feature in mean.iterrows():
+            mlflow.log_metric(feature.metric + ' - avg', feature.value, feature.step)
+        
+        std = df.groupby(['metric', 'step']).value.std().reset_index()
+        
+        for _, feature in std.iterrows():
+            mlflow.log_metric(feature.metric + ' - std', feature.value, feature.step)

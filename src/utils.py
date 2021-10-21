@@ -20,7 +20,6 @@ from sklearn.base import BaseEstimator
 
 import torch
 from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader, DenseDataLoader
 from torch_geometric.transforms import ToDense
 
 BASE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir)
@@ -51,10 +50,9 @@ FILES = {
 
 
 def load_dataset(
-    connectivity: str = 'wasserstein', batch_size: int = 8,
-    test_size: float = 0.2, val_size: float = 0.1, seed: int = 27,
+    connectivity: str = 'wasserstein', test_size: float = 0.2, seed: int = 27,
     dense: bool = False, verbose: int = 0
-) -> Tuple[DataLoader, DataLoader, DataLoader]:
+) -> Tuple[List[Data], List[Data]]:
     """
     Get training, validation, and testing DataLoaders.
     Mainly used as a high-level data fetcher in the running script.
@@ -63,60 +61,49 @@ def load_dataset(
         connectivity (str, optional): node connectivity method.. Defaults to 'wasserstein'.
         batch_size (int, optional): [description]. Defaults to 8.
         test_size (float, optional): Ratio of test set. Defaults to 0.2.
-        val_size (float, optional): Ratio of validation set. Defaults to 0.1.
         seed (int, optional): Random seed. Defaults to 27.
         dense (bool, optional): Output a DenseDataLoader
         verbose (int, optional): tuneable parameter for output verbosity. Defaults to 1.
 
     Returns:
-        Tuple[DataLoader, DataLoader, DataLoader]:
-            * loader_train (DataLoader): packaged training dataset.
-            * loader_val (DataLoader): packaged validation dataset.
-            * loader_test (DataLoader): packaged testing dataset.
+        Tuple[List[Data], List[Data]]:
+            * loader_train (List[Data]): packaged training dataset.
+            * loader_test (List[Data]): packaged testing dataset.
     """
 
     labels, lesions, patients = fetch_data(verbose)
     
-    X_train, X_val, X_test, y_train, y_val, y_test = \
+    X_train, X_test, y_train, y_test = \
         preprocess(labels, lesions, patients,
-                   test_size=test_size, val_size=val_size, seed=seed,
+                   test_size=test_size, seed=seed,
                    verbose=verbose)
         
-    loader_train = create_dataset(X=X_train, Y=y_train, dense=dense,
-                                  batch_size=batch_size,
-                                  connectivity=connectivity, verbose=verbose)
-    loader_val = create_dataset(X=X_val, Y=y_val, dense=dense,
-                                batch_size=batch_size,
-                                connectivity=connectivity, verbose=verbose)
+    dataset_train = create_dataset(X=X_train, Y=y_train, dense=dense,
+                                   connectivity=connectivity, verbose=verbose)
     
     # In the test loader we set the batch size to be
     # equal to the size of the whole test set
-    loader_test = create_dataset(X=X_test, Y=y_test, dense=dense,
-                                 batch_size=len(y_test), shuffle=False,
-                                 connectivity=connectivity, verbose=verbose)
+    dataset_test = create_dataset(X=X_test, Y=y_test, dense=dense,
+                                  connectivity=connectivity, verbose=verbose)
     
     if verbose > 0:
         print('Final amount of datapoints \n' \
-              + f'  Train: {len(loader_train.dataset)} \n' \
-              + f'  Validation: {len(loader_val.dataset)} \n' \
-              + f'  Test: {len(loader_test.dataset)}')
+              + f'  Train: {len(dataset_train)} \n' \
+              + f'  Test: {len(dataset_test)}')
 
-    return loader_train, loader_val, loader_test
+    return dataset_train, dataset_test
 
 
 def create_dataset(
-    X: pd.DataFrame, Y: pd.Series, dense: bool = False, batch_size: int = 8,
-    shuffle: bool = True, connectivity: str = 'wasserstein',
+    X: pd.DataFrame, Y: pd.Series, dense: bool = False, connectivity: str = 'wasserstein',
     distance: float = 0.5, verbose: int = 0
-) -> DataLoader:
-    """Packages preprocessed data and its labels into a `torch.utils.data.DataLoader`
+) -> List[Data]:
+    """Packages preprocessed data and its labels into a dataset
 
     Args:
         X (pd.DataFrame): `gpcr_id` indexed datapoints (lesions)
         Y (pd.Series): `gpcr_id` indexed labels. 1 is NPD.
-        dense (bool, optional): Output a DenseDataLoader
-        batch_size (int, optional): DataLoader batch size. Defaults to 8.
-        shuffle (bool, optional): shuffle graphs in DataLoader. Defaults to True.
+        dense (bool, optional): create dense Graph representations
         connectivity (str, optional): node connectivity method. Defaults to 'wasserstein'.
         distance (float, optional): if `wasserstein` connectivity is chosen,
             the threshold distance in order to create an edge between nodes. Defaults to 0.5.
@@ -126,7 +113,7 @@ def create_dataset(
         ValueError: acceptable values for connectivity are: 'fully', 'organ', and 'wasserstein'
 
     Returns:
-        DataLoader: packaged dataset within a DataLoader instance.
+        dataset
     """
     
     lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
@@ -199,8 +186,7 @@ def create_dataset(
     if verbose > 0 and skipped > 0:
         print(f'Skipped {skipped} graphs as they have less than 2 nodes.')
         
-    return DenseDataLoader(dataset, batch_size=batch_size, shuffle=shuffle) if dense else \
-        DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    return dataset
 
 
 class Preprocessor:
@@ -257,8 +243,8 @@ class Preprocessor:
 
 def preprocess(
     labels: pd.Series, lesions: pd.DataFrame, patients: pd.DataFrame,
-    test_size: float = 0.2, val_size: float = 0.2, seed: int = 27, verbose: int = 1
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+    test_size: float = 0.2, seed: int = 27, verbose: int = 1
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """
     Preprocess filtered raw data into train, validation, and test splits.
     Imputation, standardization, and one-hot encoding of features using sklearn pipelines.
@@ -268,28 +254,19 @@ def preprocess(
         lesions (pd.DataFrame): gpcr_id` indexed lesion-level data.
         patients (pd.DataFrame): `gpcr_id` indexed patient-level data including blood screens.
         test_size (float, optional): Ratio of test set. Defaults to 0.2.
-        val_size (float, optional): Ratio of validation set. Defaults to 0.1.
         seed (int, optional): Random seed. Defaults to 27.
         verbose (int, optional): tuneable parameter for output verbosity. Defaults to 1.
 
     Returns:
         Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
             * X_train (pd.DataFrame): `gpcr_id` indexed training dataset.
-            * X_val (pd.DataFrame): `gpcr_id` indexed validation dataset.
             * X_test (pd.DataFrame): `gpcr_id` indexed testing dataset.
             * y_train (pd.Series): `gpcr_id` indexed training Series with progression labels. 1 is NPD.
-            * y_val (pd.Series): `gpcr_id` indexed validation Series with progression labels. 1 is NPD.
             * y_test (pd.Series): `gpcr_id` indexed test Series with progression labels. 1 is NPD.
     """
     
     I_train, I_test, y_train, y_test = \
         train_test_split(labels.index, labels, test_size=test_size, random_state=seed)
-        
-    # Account for already taken up test size
-    val_size = val_size / (1 - test_size)
-    # Compute validation set indices
-    I_train, I_val, y_train, y_val = \
-        train_test_split(I_train, y_train, test_size=val_size, random_state=seed)
         
     lesions_pp = Preprocessor(
         pipe=ColumnTransformer(
@@ -329,26 +306,22 @@ def preprocess(
     lesions_pp.fit(lesions.loc[I_train])
 
     lesions_train = lesions_pp.transform(lesions.loc[I_train])
-    lesions_val = lesions_pp.transform(lesions.loc[I_val])
     lesions_test = lesions_pp.transform(lesions.loc[I_test])
     
     patients_pp.fit(patients.loc[I_train])
 
     patients_train = patients_pp.transform(patients.loc[I_train])
-    patients_val = patients_pp.transform(patients.loc[I_val])
     patients_test = patients_pp.transform(patients.loc[I_test])
     
     X_train = pd.merge(lesions_train, patients_train, left_index=True, right_index=True)
-    X_val = pd.merge(lesions_val, patients_val, left_index=True, right_index=True)
     X_test = pd.merge(lesions_test, patients_test, left_index=True, right_index=True)
     
     if verbose > 0:
         print('Processed and split dataset into \n' \
               + f'  Train: {y_train.shape[0]} \n' \
-              + f'  Validation: {y_val.shape[0]} \n' \
               + f'  Test: {y_test.shape[0]}')
     
-    return X_train, X_val, X_test, y_train, y_val, y_test
+    return X_train, X_test, y_train, y_test
 
 
 def fetch_data(verbose: int = 1) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:

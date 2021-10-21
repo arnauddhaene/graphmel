@@ -24,6 +24,13 @@ The modeling experiments and their runs are tracked with MLflow. To run the UI, 
 mlflow ui
 ```
 
+If you happen to quit your Terminal window before killing MLflow (as I have done too many times). Use the following commands:
+
+```bash
+lsof -t :5000
+kill -9 <PID>
+```
+
 #### Sharing the experimentation results
 
 For the moment, the `mlruns` is included in the `.gitignore` as the artifacts are quite large and most coding is done on my laptop.

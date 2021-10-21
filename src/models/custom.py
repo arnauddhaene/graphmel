@@ -14,6 +14,12 @@ class BaseModule(nn.Module):
         """Parameter counter"""
         return sum(param.numel() for param in self.parameters())
     
+    def reset(self) -> None:
+        """Reset weights to zero"""
+        for layer in self.children():
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
+    
     def __str__(self):
         raise NotImplementedError
 

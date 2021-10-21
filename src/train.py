@@ -4,13 +4,12 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-import mlflow
-
-from metrics import evaluate_accuracy
+from metrics import evaluate_accuracy, TrainingMetrics
 
 
 def train(
     model: nn.Module, loader_train: DataLoader, loader_valid: DataLoader,
+    metrics: TrainingMetrics,
     learning_rate: float = 1e-2, weight_decay: float = 1e-3, gamma: float = .5,
     epochs: int = 25, device=None, dense: bool = None,
     verbose: int = 0
@@ -22,17 +21,14 @@ def train(
         model (nn.Module): model
         loader_train (DataLoader): data loader
         loader_valid (DataLoader): data loader for validation
+        metrics (metrics.TrainingMetrics): metrics object to store results in
         learning_rate (float, optional): learning rate. Defaults to 1e-2.
         weight_decay (float, optional): weight decay for Adam. Defaults to 1e-3.
         epochs (int, optional): number of epochs. Defaults to 25.
-        metrics (metrics.TrainingMetrics): metrics object to store results in
         dense (bool), optional:
             train model using dense representation, by default None.
             if None, `model.is_dense()` is called
         verbose (int, optional): print info. Defaults to 0.
-
-    Returns:
-        TrainingMetrics: metrics of training run
     """
     
     if dense is None:
@@ -68,6 +64,6 @@ def train(
         acc_valid = evaluate_accuracy(model, loader_valid)
             
         with torch.no_grad():
-            mlflow.log_metric('Loss - training', epoch_loss, step=epoch)
-            mlflow.log_metric('Accuracy - training', acc_train, step=epoch)
-            mlflow.log_metric('Accuracy - validation', acc_valid, step=epoch)
+            metrics.log_metric('Loss - training', epoch_loss, step=epoch)
+            metrics.log_metric('Accuracy - training', acc_train, step=epoch)
+            metrics.log_metric('Accuracy - validation', acc_valid, step=epoch)
