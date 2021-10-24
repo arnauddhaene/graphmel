@@ -14,9 +14,7 @@ from sklearn.model_selection import KFold
 import mlflow
 
 from metrics import evaluate_accuracy, TrainingMetrics
-from models.gnn import GNN
-from models.gat import GAT
-from models.gin import GIN
+from models.baseline import BaselineGNN
 from models.diffpool import DiffPool
 from train import train
 from utils import load_dataset, ASSETS_DIR
@@ -49,7 +47,7 @@ from utils import load_dataset, ASSETS_DIR
               help="Cross-validation splits.")
 @click.option('--experiment-name', default='Default',
               help="Assign run to experiment.")
-@click.option('--verbose', default=2, type=int,
+@click.option('--verbose', default=1, type=int,
               help="Print out info for debugging purposes.")
 def run(model, connectivity,
         epochs, lr, decay, hidden_dim, batch_size,
@@ -80,20 +78,20 @@ def run(model, connectivity,
         node_features_dim=43)
     
     if model == 'GNN':
-        model = GNN(**model_args).to(device)
+        model = BaselineGNN(layer_type='GraphConv', **model_args).to(device)
     elif model == 'GAT':
-        model = GAT(**model_args).to(device)
+        model = BaselineGNN(layer_type='GAT', **model_args).to(device)
     elif model == 'DiffPool':
         model = DiffPool(**model_args).to(device)
     elif model == 'GIN':
-        model = GIN(**model_args).to(device)
+        model = BaselineGNN(layer_type='GIN', **model_args).to(device)
     else:
         raise ValueError(f'Could not instanciate {model} model')
         
     mlflow.log_param('Model', model)
     mlflow.log_param('Weights', model.param_count())
         
-    if verbose > 1:
+    if verbose > 0:
         print(f"{model} instanciated with {model.param_count()} parameters.\n"
               f"Creating {connectivity}-connected graph representations and storing "
               f"into DataLoaders with batch size {batch_size}...")

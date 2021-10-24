@@ -36,11 +36,8 @@ def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = 
     for data in loader:  # Iterate in batches over the training/test dataset.
         data.to(device)
         
-        if dense:
-            out, _, _ = model(data.x, data.adj, data.mask)
-        else:
-            out = model(data.x, data.edge_index, data.batch)
-            
+        out = model(data)
+
         y_preds.append(out.argmax(dim=1))  # Use the class with highest probability.
         y_trues.append(data.y)  # Check against ground-truth labels.
 

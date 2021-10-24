@@ -32,7 +32,9 @@ class DiffPool(DenseModule):
 
         self.readout = LogSoftmax(dim=-1)
 
-    def forward(self, x, adj, mask=None):
+    def forward(self, batch):
+        
+        x, adj, mask = batch.x, batch.adj, batch.mask
         
         s = self.initial_pool(x, adj, mask)
         x = self.initial_embed(x, adj, mask)
@@ -53,7 +55,7 @@ class DiffPool(DenseModule):
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.fc2(x)
         
-        return F.log_softmax(x, dim=-1), l1 + l2, e1 + e2
+        return F.log_softmax(x, dim=-1)
     
     def __str__(self) -> str:
         """Representation"""
@@ -66,7 +68,7 @@ class DenseGNN(DenseModule):
         in_channels: int,
         hidden_dim: int,
         out_channels: int,
-        conv_layers: int = 5
+        conv_layers: int = 2
     ):
         super(DenseGNN, self).__init__()
         

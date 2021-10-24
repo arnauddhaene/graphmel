@@ -43,20 +43,17 @@ def train(
 
         model.train()
         
-        for batch in tqdm(loader_train, leave=False):
-            batch.to(device)
+        for data in tqdm(loader_train, leave=False):
+            data.to(device)
             
-            if dense:
-                output, _, _ = model(batch.x, batch.adj, batch.mask)
-            else:
-                output = model(batch.x, batch.edge_index, batch.batch)
+            output = model(data)
             
-            loss = criterion(output, batch.y.flatten())
+            loss = criterion(output, data.y.flatten())
     
             optimizer.zero_grad()
             
+            epoch_loss += loss.item()
             loss.backward()
-            epoch_loss += batch.y.size(0) * loss.item()
             
             optimizer.step()
             

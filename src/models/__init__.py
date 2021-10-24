@@ -1,11 +1,8 @@
 __all__ = [
-    "DiffPool",
+    "DiffPool", "BaselineGNN",
     "BaseModule", "DenseModule", "SparseModule", "WeightInitializableModule",
-    "GNN", "GIN", "GAT"
 ]
 
 from .custom import BaseModule, DenseModule, SparseModule, WeightInitializableModule
 from .diffpool import DiffPool
-from .gat import GAT
-from .gnn import GNN
-from .gin import GIN
+from .baseline import BaselineGNN
