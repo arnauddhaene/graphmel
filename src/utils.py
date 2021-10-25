@@ -86,11 +86,6 @@ def load_dataset(
     dataset_test = create_dataset(X=X_test, Y=y_test, dense=dense,
                                   connectivity=connectivity, verbose=verbose)
     
-    if verbose > 0:
-        print('Final amount of datapoints \n' \
-              + f'  Train: {len(dataset_train)} \n' \
-              + f'  Test: {len(dataset_test)}')
-
     return dataset_train, dataset_test
 
 

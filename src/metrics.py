@@ -1,13 +1,16 @@
 import pandas as pd
 
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
 import torch
+from torch import nn
 from torch.utils.data import DataLoader
 
 import mlflow
 
 
-def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = None,
-                      device=None):
+def compute_predictions(model: torch.nn.Module, loader: DataLoader, dense: bool = None,
+                        device: torch.device = None):
     """Compute accuracy of input model over all samples from the loader.
     
     Args:
@@ -20,7 +23,8 @@ def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = 
             Device to use, by default None.
             if None uses cuda if available else cpu.
     Returns:
-        float: Accuracy in [0,1]
+        List[int]: predictions
+        List[int]: ground truth labels
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -43,16 +47,44 @@ def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = 
 
     y_pred = torch.cat(y_preds).flatten()
     y_true = torch.cat(y_trues).flatten()
+    
+    return y_true, y_pred
+
+
+def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = None,
+                      device: torch.device = None):
+    """Compute accuracy of input model over all samples from the loader.
+    
+    Args:
+        model (torch.nn.Module): NN model
+        loader (DataLoader): Data loader to evaluate on
+        dense (bool), optional:
+            train model using dense representation, by default None.
+            if None, `model.is_dense()` is called
+        device (torch.device), optional:
+            Device to use, by default None.
+            if None uses cuda if available else cpu.
+    Returns:
+        float: Accuracy in [0,1]
+    """
+    y_true, y_pred = compute_predictions(model, loader, dense, device)
 
     return torch.sum(y_pred == y_true).item() / len(y_true)
 
 
-class TrainingMetrics():
+class Metrics():
+    
+    def __init__(self):
+        
+        self.storage = []
+    
+
+class TrainingMetrics(Metrics):
 
     def __init__(self):
         
+        super(TrainingMetrics, self).__init__()
         self.run = 0
-        self.storage = []
     
     def log_metric(self, metric: str, value: float, step: int = 0):
         
@@ -79,3 +111,32 @@ class TrainingMetrics():
         
         for _, feature in std.iterrows():
             mlflow.log_metric(feature.metric + ' - std', feature.value, feature.step)
+
+
+class TestingMetrics(Metrics):
+    
+    def __init__(self, epoch: int = 0):
+        
+        super(TrainingMetrics, self).__init__()
+        self.epoch = epoch
+    
+    def compute_metrics(self, model: nn.Module, loader: DataLoader):
+                
+        y_true, y_pred = compute_predictions(model, loader)
+        
+        # Add testing accuracy
+        self.storage.append(
+            dict(metric='Accuracy - testing',
+                 value=accuracy_score(y_true, y_pred))
+        )
+        
+        # Add other binary classification metrics
+        for value, metric in zip(list(precision_recall_fscore_support(y_true, y_pred, average='binary'))[:-1],
+                                 ['precision', 'recall', 'fscore']):
+            self.storage.append(dict(metric=(metric.capitalize() + ' - testing'), value=value))
+        
+    def send_log(self):
+        
+        for log in self.storage:
+            metric, value = tuple(log.values())
+            mlflow.log_metric(metric, value, step=self.epoch)

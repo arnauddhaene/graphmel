@@ -32,9 +32,9 @@ class DiffPool(DenseModule):
 
         self.readout = LogSoftmax(dim=-1)
 
-    def forward(self, batch):
+    def forward(self, data):
         
-        x, adj, mask = batch.x, batch.adj, batch.mask
+        x, adj, mask = data.x, data.adj, data.mask
         
         s = self.initial_pool(x, adj, mask)
         x = self.initial_embed(x, adj, mask)

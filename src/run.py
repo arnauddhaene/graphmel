@@ -13,7 +13,7 @@ from sklearn.model_selection import KFold
 
 import mlflow
 
-from metrics import evaluate_accuracy, TrainingMetrics
+from metrics import TrainingMetrics, TestingMetrics
 from models.baseline import BaselineGNN
 from models.diffpool import DiffPool
 from train import train
@@ -139,16 +139,17 @@ def run(model, connectivity,
     
     MODEL_PATH = os.path.join(ASSETS_DIR, f'models/{model}-{timestamp}.pkl')
     torch.save(model.state_dict(), MODEL_PATH)
-    # mlflow.log_artifact(MODEL_PATH)à
+    # mlflow.log_artifact(MODEL_PATH)
     
     loader_test_args = dict(dataset=dataset_test, batch_size=len(dataset_test))
     
     loader_test = DenseDataLoader(**loader_test_args) if model.is_dense() \
         else DataLoader(**loader_test_args)
         
-    acc_test = evaluate_accuracy(model, loader_test)
+    test_metrics = TestingMetrics(epoch=epochs)
+    test_metrics.compute_metrics(model, loader_test)
+    test_metrics.send_log()
     
-    mlflow.log_metric('Accuracy - testing', acc_test, step=epochs)
     mlflow.end_run()
 
 
