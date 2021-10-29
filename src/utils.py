@@ -110,17 +110,15 @@ def load_dataset(
         
         X_train, X_test, y_train, y_test = \
             preprocess(labels, lesions, patients,
-                    test_size=test_size, seed=seed,
-                    verbose=verbose)
+                       test_size=test_size, seed=seed, verbose=verbose)
             
         dataset_train = create_dataset(X=X_train, Y=y_train, dense=dense,
-                                    connectivity=connectivity, verbose=verbose)
+                                       connectivity=connectivity, verbose=verbose)
         
         # In the test loader we set the batch size to be
         # equal to the size of the whole test set
         dataset_test = create_dataset(X=X_test, Y=y_test, dense=dense,
-                                    connectivity=connectivity, verbose=verbose)
-    
+                                      connectivity=connectivity, verbose=verbose)
     
         fpath = os.path.join(CHECKPOINTS_DIR,
                              f'{connectivity}_{round(test_size * 100)}_{seed}_{dense}_{dt.date.today()}.pt')

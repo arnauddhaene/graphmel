@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 from utils import ASSETS_DIR
 
 
-def compute_predictions(model: torch.nn.Module, loader: DataLoader, validation: bool = False, 
+def compute_predictions(model: torch.nn.Module, loader: DataLoader, validation: bool = False,
                         device: torch.device = None):
     """Compute accuracy of input model over all samples from the loader.
     
@@ -120,7 +120,6 @@ class TrainingMetrics(Metrics):
         # return weighted objective of training and validation accuracy
         return .5 * objectives['Accuracy - training'] + .5 * objectives['Accuracy - validation']
 
-    
     def send_log(self):
     
         df = pd.DataFrame(self.storage)

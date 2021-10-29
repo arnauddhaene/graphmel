@@ -104,7 +104,7 @@ def run(model, connectivity,
     
     kfold = KFold(n_splits=cv, shuffle=True)
     
-    for fold, (I_train, I_valid) in tqdm(enumerate(kfold.split(dataset_train)), 
+    for fold, (I_train, I_valid) in tqdm(enumerate(kfold.split(dataset_train)),
                                          total=cv, leave=False, disable=(verbose < 0)):
         
         metrics.set_run(fold)

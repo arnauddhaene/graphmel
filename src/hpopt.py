@@ -33,7 +33,7 @@ def tune_hyperparams(ctx: click.Context, model, connectivity, epochs,
             model=model,
             connectivity=connectivity, epochs=epochs,
             test_size=test_size, seed=seed, cv=cv,
-            lr=tune.grid_search([1e-1, 1e-2, 1e-3, 1e-4]), 
+            lr=tune.grid_search([1e-1, 1e-2, 1e-3, 1e-4]),
             decay=tune.grid_search([1e-2, 1e-3]),
             hidden_dim=tune.choice([16, 32, 64, 128]),
             batch_size=tune.choice([4, 8, 16])
@@ -55,9 +55,9 @@ def invoke_run(config):
         config['lr'], config['decay'], config['hidden_dim'], config['batch_size']
     
     metric = ctx.invoke(run, model=model, connectivity=connectivity, epochs=epochs,
-               lr=lr, decay=decay, hidden_dim=hidden_dim, batch_size=batch_size, 
-               test_size=test_size, seed=seed, cv=cv,
-               experiment_name='Default', verbose=verbose)
+                        lr=lr, decay=decay, hidden_dim=hidden_dim, batch_size=batch_size,
+                        test_size=test_size, seed=seed, cv=cv,
+                        experiment_name='Default', verbose=verbose)
     
     tune.report(objective=metric)
 
