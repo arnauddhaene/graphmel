@@ -27,7 +27,7 @@ mlflow ui
 If you happen to quit your Terminal window before killing MLflow (as I have done too many times). Use the following commands:
 
 ```bash
-lsof -t :5000
+lsof -i :5000
 kill -9 <PID>
 ```
 
