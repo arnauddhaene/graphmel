@@ -1,12 +1,21 @@
+import os
+import datetime as dt
+
 import pandas as pd
 
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import mlflow
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-import mlflow
+from utils import ASSETS_DIR
 
 
 def compute_predictions(model: torch.nn.Module, loader: DataLoader, dense: bool = None,
@@ -117,26 +126,55 @@ class TestingMetrics(Metrics):
     
     def __init__(self, epoch: int = 0):
         
-        super(TrainingMetrics, self).__init__()
+        super(TestingMetrics, self).__init__()
         self.epoch = epoch
     
     def compute_metrics(self, model: nn.Module, loader: DataLoader):
                 
-        y_true, y_pred = compute_predictions(model, loader)
+        self.y_true, self.y_pred = compute_predictions(model, loader)
         
         # Add testing accuracy
         self.storage.append(
             dict(metric='Accuracy - testing',
-                 value=accuracy_score(y_true, y_pred))
+                 value=accuracy_score(self.y_true, self.y_pred))
         )
         
         # Add other binary classification metrics
-        for value, metric in zip(list(precision_recall_fscore_support(y_true, y_pred, average='binary'))[:-1],
-                                 ['precision', 'recall', 'fscore']):
+        bin_class_metrics = precision_recall_fscore_support(self.y_true, self.y_pred, average='binary')
+        for value, metric in zip(list(bin_class_metrics)[:-1], ['precision', 'recall', 'fscore']):
             self.storage.append(dict(metric=(metric.capitalize() + ' - testing'), value=value))
         
-    def send_log(self):
+    def send_log(self, timestamp: dt.datetime):
         
         for log in self.storage:
             metric, value = tuple(log.values())
             mlflow.log_metric(metric, value, step=self.epoch)
+        
+        fpath = os.path.join(ASSETS_DIR + 'figures/', f'TEST_METRICS_{timestamp}.png')
+        self.plot(fpath)
+        mlflow.log_artifact(fpath)
+            
+    def plot(self, fpath: str):
+        
+        fig, ax = plt.subplots()
+        
+        self.plot_confusion_matrix(ax)
+        
+        clean = [f"{entry['metric'].split(' ')[0]}: {entry['value']:,.3f}" for entry in self.storage]
+        
+        fig.text(.5, .95, ' | '.join(clean), ha='center', va='center')
+        
+        plt.savefig(fpath, dpi=200)
+            
+    def plot_confusion_matrix(self, ax: mpl.axes.Axes) -> mpl.axes.Axes:
+        
+        mf = pd.DataFrame(confusion_matrix(self.y_true, self.y_pred))
+        
+        mf.columns, mf.index = ['NPD', 'PD'], ['NPD', 'PD']
+
+        sns.heatmap(mf, annot=True, cmap='Blues', cbar=False, fmt='g', ax=ax)
+
+        ax.set_xlabel('Predicted')
+        ax.set_ylabel('Ground Truth')
+        
+        return ax

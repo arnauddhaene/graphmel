@@ -108,7 +108,7 @@ def run(model, connectivity,
     
     for fold, (I_train, I_valid) in tqdm(enumerate(kfold.split(dataset_train)), total=cv):
         
-        metrics.set_run(kfold)
+        metrics.set_run(fold)
         
         model.reset()
         
@@ -148,7 +148,7 @@ def run(model, connectivity,
         
     test_metrics = TestingMetrics(epoch=epochs)
     test_metrics.compute_metrics(model, loader_test)
-    test_metrics.send_log()
+    test_metrics.send_log(timestamp=timestamp)
     
     mlflow.end_run()
 

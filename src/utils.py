@@ -312,9 +312,7 @@ def preprocess(
     X_test = pd.merge(lesions_test, patients_test, left_index=True, right_index=True)
     
     if verbose > 0:
-        print('Processed and split dataset into \n' \
-              + f'  Train: {y_train.shape[0]} \n' \
-              + f'  Test: {y_test.shape[0]}')
+        print(f'Processed and split dataset into -> Train: {y_train.shape[0]} | Test: {y_test.shape[0]}')
     
     return X_train, X_test, y_train, y_test
 

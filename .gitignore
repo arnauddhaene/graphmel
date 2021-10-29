@@ -9,6 +9,7 @@ __pycache__/
 # Data and model checkpoints
 data/checkpoints/
 assets/models/
+assets/figures/
 
 # MLflow information
 mlruns/
