@@ -96,21 +96,18 @@ st.title("Graph analytics for immunotherapy response prediction in melanoma")
 CONNECTION_DIR = '/Users/arnauddhaene/Downloads/'
 
 # Fetch data
-lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['lesions']))
+lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
 lesions['study_phase'] = lesions.study_name.apply(extract_study_phase)
 lesions = lesions[(lesions.pars_classification_petct != 'benign')]
 
-progression = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES['progression']))
+progression = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1],
+                                       FILES[DATA_FOLDERS[1]]['progression']))
 
-studies = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['studies']))
-studies.rename(columns={'is_malignant': 'malignant_lesions'}, inplace=True)
-studies.drop(columns=['n_days_to_treatment_start', 'n_days_to_treatment_end'], inplace=True)
-
-patients = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES['patients']))
+patients = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['patients']))
 patients['age_at_treatment_start_in_years'] = \
     patients.age_at_treatment_start_in_years.apply(lambda a: 90 if a == '90 or older' else int(a))
 
-blood = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES['blood']))
+blood = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES[DATA_FOLDERS[1]]['blood']))
 blood.drop(columns=['n_days_to_treatment_start', 'n_days_to_treatment_end'], inplace=True)
 blood.rename(columns={feature: feature.replace('-', '_') for feature in blood.columns},
              inplace=True)

@@ -16,6 +16,15 @@ streamlit run src/eda.py -- --data filepath
 
 If you are on macOS, `filepath` will most likely be `/Volumes/lts4-immuno/data_2021-09-20` (VPN connection to EPFL and smb connection to fileserver are necessary conditions for this to work).
 
+### Graph Representation Dashboard
+
+To test out different lesion-connection methodologies, a dashboard was developed. To launch it, run the following command from the base directory:
+
+```bash
+streamlit run src/representation.py
+```
+
+
 ### MLflow
 
 The modeling experiments and their runs are tracked with MLflow. To run the UI, use the following command:
