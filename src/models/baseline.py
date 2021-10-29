@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn import Linear, LogSoftmax, ModuleList, Sequential, BatchNorm1d, ReLU
 
-from torch_geometric.nn import GATConv, GraphConv, GINConv
+from torch_geometric.nn import GATv2Conv as GATConv, GraphConv, GINConv
 from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
 
 from models.custom import SparseModule
