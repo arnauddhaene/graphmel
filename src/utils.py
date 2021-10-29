@@ -3,6 +3,10 @@ import os
 from typing import List, Tuple
 from collections.abc import Callable
 
+import pickle
+
+import datetime as dt
+
 from itertools import permutations
 
 import pandas as pd
@@ -25,6 +29,7 @@ from torch_geometric.transforms import ToDense
 BASE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir)
 DATA_DIR = os.path.join(BASE_DIR, 'data/')
 ASSETS_DIR = os.path.join(BASE_DIR, 'assets/')
+CHECKPOINTS_DIR = os.path.join(DATA_DIR, 'checkpoints')
 
 # CONNECTION_DIR = '/Volumes/lts4-immuno/'
 CONNECTION_DIR = '/Users/arnauddhaene/Downloads/'
@@ -49,9 +54,22 @@ FILES = {
 }
 
 
+def fetch_dataset_id(fname: str) -> Tuple[str, int, int, bool]:
+    
+    name, extension = tuple(fname.split('.'))
+    
+    connectivity, test_size, seed, dense = tuple(name.split('_')[:4])
+    
+    test_size_p = int(test_size)
+    seed = int(seed)
+    dense = dense == 'True'
+    
+    return (connectivity, test_size_p, seed, dense)
+
+
 def load_dataset(
     connectivity: str = 'wasserstein', test_size: float = 0.2, seed: int = 27,
-    dense: bool = False, verbose: int = 0
+    dense: bool = True, verbose: int = 0
 ) -> Tuple[List[Data], List[Data]]:
     """
     Get training, validation, and testing DataLoaders.
@@ -59,7 +77,6 @@ def load_dataset(
 
     Args:
         connectivity (str, optional): node connectivity method.. Defaults to 'wasserstein'.
-        batch_size (int, optional): [description]. Defaults to 8.
         test_size (float, optional): Ratio of test set. Defaults to 0.2.
         seed (int, optional): Random seed. Defaults to 27.
         dense (bool, optional): Output a DenseDataLoader
@@ -70,21 +87,46 @@ def load_dataset(
             * loader_train (List[Data]): packaged training dataset.
             * loader_test (List[Data]): packaged testing dataset.
     """
-
-    labels, lesions, patients = fetch_data(verbose)
     
-    X_train, X_test, y_train, y_test = \
-        preprocess(labels, lesions, patients,
-                   test_size=test_size, seed=seed,
-                   verbose=verbose)
+    identifier = (connectivity, round(test_size * 100), seed, dense)
+    
+    files = os.listdir(CHECKPOINTS_DIR)
+    stored_datasets = dict(zip(map(fetch_dataset_id, files), files))
+    
+    if identifier in stored_datasets.keys():
         
-    dataset_train = create_dataset(X=X_train, Y=y_train, dense=dense,
-                                   connectivity=connectivity, verbose=verbose)
+        fpath = os.path.join(CHECKPOINTS_DIR, stored_datasets[identifier])
+        
+        if verbose > 0:
+            date = stored_datasets[identifier].split('.')[0].split('_')[-1]
+            print(f'Using stored dataset that was saved on {date}.')
+        
+        infile = open(fpath, 'rb')
+        dataset_train, dataset_test = pickle.load(infile)
+        
+    else:
+
+        labels, lesions, patients = fetch_data(verbose)
+        
+        X_train, X_test, y_train, y_test = \
+            preprocess(labels, lesions, patients,
+                    test_size=test_size, seed=seed,
+                    verbose=verbose)
+            
+        dataset_train = create_dataset(X=X_train, Y=y_train, dense=dense,
+                                    connectivity=connectivity, verbose=verbose)
+        
+        # In the test loader we set the batch size to be
+        # equal to the size of the whole test set
+        dataset_test = create_dataset(X=X_test, Y=y_test, dense=dense,
+                                    connectivity=connectivity, verbose=verbose)
     
-    # In the test loader we set the batch size to be
-    # equal to the size of the whole test set
-    dataset_test = create_dataset(X=X_test, Y=y_test, dense=dense,
-                                  connectivity=connectivity, verbose=verbose)
+    
+        fpath = os.path.join(CHECKPOINTS_DIR,
+                             f'{connectivity}_{round(test_size * 100)}_{seed}_{dense}_{dt.date.today()}.pt')
+        
+        outfile = open(fpath, 'wb')
+        pickle.dump((dataset_train, dataset_test), outfile)
     
     return dataset_train, dataset_test
 
