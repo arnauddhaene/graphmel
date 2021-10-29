@@ -27,7 +27,7 @@ from utils import load_dataset, ASSETS_DIR
 @click.option('--connectivity', default='wasserstein',
               type=click.Choice(['fully', 'organ', 'wasserstein'], case_sensitive=False),
               help="Graph connectivity choice.")
-@click.option('--epochs', default=200,
+@click.option('--epochs', default=50,
               help="Number of training epochs.")
 @click.option('--lr', default=1e-4,
               help="Learning rate.")
@@ -37,11 +37,9 @@ from utils import load_dataset, ASSETS_DIR
               help="GNN hidden dimensions.")
 @click.option('--batch-size', default=8,
               help="Batch size for training.")
-@click.option('--val-size', default=0.2,
-              help="Validation set size in ratio.")
 @click.option('--test-size', default=0.2,
               help="Test set size in ratio.")
-@click.option('--seed', default=21,
+@click.option('--seed', default=27,
               help="Random seed.")
 @click.option('--cv', default=5,
               help="Cross-validation splits.")
@@ -51,7 +49,7 @@ from utils import load_dataset, ASSETS_DIR
               help="Print out info for debugging purposes.")
 def run(model, connectivity,
         epochs, lr, decay, hidden_dim, batch_size,
-        test_size, val_size, seed, cv,
+        test_size, seed, cv,
         experiment_name, verbose):
     
     experiment = mlflow.get_experiment_by_name(experiment_name)
@@ -82,7 +80,7 @@ def run(model, connectivity,
     elif model == 'GAT':
         model = BaselineGNN(layer_type='GAT', **model_args).to(device)
     elif model == 'DiffPool':
-        model = DiffPool(**model_args).to(device)
+        model = DiffPool(**model_args, num_nodes=[9]).to(device)
     elif model == 'GIN':
         model = BaselineGNN(layer_type='GIN', **model_args).to(device)
     else:
@@ -93,7 +91,7 @@ def run(model, connectivity,
         
     if verbose > 0:
         print(f"{model} instanciated with {model.param_count()} parameters.\n"
-              f"Creating {connectivity}-connected graph representations and storing "
+              f"Fetching {connectivity}-connected graph representations and storing "
               f"into DataLoaders with batch size {batch_size}...")
     
     dataset_train, dataset_test = \
@@ -106,16 +104,17 @@ def run(model, connectivity,
     
     kfold = KFold(n_splits=cv, shuffle=True)
     
-    for fold, (I_train, I_valid) in tqdm(enumerate(kfold.split(dataset_train)), total=cv):
+    for fold, (I_train, I_valid) in tqdm(enumerate(kfold.split(dataset_train)), 
+                                         total=cv, leave=False, disable=(verbose < 0)):
         
         metrics.set_run(fold)
         
         model.reset()
         
-        if verbose > 1:
-            print(f'Fold no. {fold}')
-            print(f'Train size: {len(I_train)}, Valid size: {len(I_valid)}')
-            print(f'Intersection: {len(list(set(I_train) & set(I_valid)))}')
+        if verbose > 0 and fold == 0:
+            print(f'Fold no. {fold} | '
+                  f'Train size: {len(I_train)}, Valid size: {len(I_valid)} | '
+                  f'Intersection: {len(list(set(I_train) & set(I_valid)))}')
         
         sampler_train = SubsetRandomSampler(I_train)
         sampler_valid = SubsetRandomSampler(I_valid)
@@ -151,6 +150,8 @@ def run(model, connectivity,
     test_metrics.send_log(timestamp=timestamp)
     
     mlflow.end_run()
+    
+    return metrics.get_objective()
 
 
 if __name__ == '__main__':

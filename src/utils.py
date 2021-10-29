@@ -127,6 +127,9 @@ def load_dataset(
         
         outfile = open(fpath, 'wb')
         pickle.dump((dataset_train, dataset_test), outfile)
+        
+    if verbose > 0:
+        print(f'Final dataset split -> Train: {len(dataset_train)} | Test: {len(dataset_test)}')
     
     return dataset_train, dataset_test
 
@@ -352,9 +355,6 @@ def preprocess(
     
     X_train = pd.merge(lesions_train, patients_train, left_index=True, right_index=True)
     X_test = pd.merge(lesions_test, patients_test, left_index=True, right_index=True)
-    
-    if verbose > 0:
-        print(f'Processed and split dataset into -> Train: {y_train.shape[0]} | Test: {y_test.shape[0]}')
     
     return X_train, X_test, y_train, y_test
 

@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from metrics import evaluate_accuracy, TrainingMetrics
+from metrics import evaluate, TrainingMetrics
 
 
 def train(
@@ -31,19 +31,19 @@ def train(
         verbose (int, optional): print info. Defaults to 0.
     """
     
-    if dense is None:
-        dense = model.is_dense()
-
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    
     criterion = nn.NLLLoss()
     optimizer = torch.optim.Adam(
         model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    for epoch in tqdm(range(epochs)):
+    for epoch in tqdm(range(epochs), disable=(verbose < 0)):
         epoch_loss = 0.
 
         model.train()
         
-        for data in tqdm(loader_train, leave=False):
+        for data in loader_train:
             data.to(device)
             
             output = model(data)
@@ -57,10 +57,11 @@ def train(
             
             optimizer.step()
             
-        acc_train = evaluate_accuracy(model, loader_train)
-        acc_valid = evaluate_accuracy(model, loader_valid)
+        acc_train, _ = evaluate(model, loader_train)
+        acc_valid, loss_valid = evaluate(model, loader_valid, validation=True)
             
         with torch.no_grad():
             metrics.log_metric('Loss - training', epoch_loss, step=epoch)
+            metrics.log_metric('Loss - validation', loss_valid, step=epoch)
             metrics.log_metric('Accuracy - training', acc_train, step=epoch)
             metrics.log_metric('Accuracy - validation', acc_valid, step=epoch)

@@ -18,67 +18,70 @@ from torch.utils.data import DataLoader
 from utils import ASSETS_DIR
 
 
-def compute_predictions(model: torch.nn.Module, loader: DataLoader, dense: bool = None,
+def compute_predictions(model: torch.nn.Module, loader: DataLoader, validation: bool = False, 
                         device: torch.device = None):
     """Compute accuracy of input model over all samples from the loader.
     
     Args:
         model (torch.nn.Module): NN model
         loader (DataLoader): Data loader to evaluate on
-        dense (bool), optional:
-            train model using dense representation, by default None.
-            if None, `model.is_dense()` is called
+        validation (bool): Validation mode, will also compute loss. Defaults to False.
         device (torch.device), optional:
             Device to use, by default None.
             if None uses cuda if available else cpu.
     Returns:
         List[int]: predictions
         List[int]: ground truth labels
+        float: loss. Returns None if not in validation mode.
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-    if dense is None:
-        dense = model.is_dense()
 
     model.eval()
-
+    
+    if validation:
+        criterion = nn.NLLLoss()
+        loss = 0.
+    
     y_preds = []
     y_trues = []
+    
+    with torch.no_grad():
+        for data in loader:  # Iterate in batches over the training/test dataset.
+            data.to(device)
+            
+            out = model(data)
+            
+            if validation:
+                loss += criterion(out, data.y.flatten()).item()
 
-    for data in loader:  # Iterate in batches over the training/test dataset.
-        data.to(device)
-        
-        out = model(data)
-
-        y_preds.append(out.argmax(dim=1))  # Use the class with highest probability.
-        y_trues.append(data.y)  # Check against ground-truth labels.
+            y_preds.append(out.argmax(dim=1))  # Use the class with highest probability.
+            y_trues.append(data.y)  # Check against ground-truth labels.
 
     y_pred = torch.cat(y_preds).flatten()
     y_true = torch.cat(y_trues).flatten()
     
-    return y_true, y_pred
+    return y_true, y_pred, loss if validation else None
 
 
-def evaluate_accuracy(model: torch.nn.Module, loader: DataLoader, dense: bool = None,
-                      device: torch.device = None):
+def evaluate(model: torch.nn.Module, loader: DataLoader, validation: bool = False,
+             device: torch.device = None):
     """Compute accuracy of input model over all samples from the loader.
     
     Args:
         model (torch.nn.Module): NN model
         loader (DataLoader): Data loader to evaluate on
-        dense (bool), optional:
-            train model using dense representation, by default None.
-            if None, `model.is_dense()` is called
+        validation (bool): Validation mode, will also compute loss. Defaults to False.
         device (torch.device), optional:
             Device to use, by default None.
             if None uses cuda if available else cpu.
     Returns:
         float: Accuracy in [0,1]
+        float: loss. Returns None if not in validation mode.
     """
-    y_true, y_pred = compute_predictions(model, loader, dense, device)
+    y_true, y_pred, loss = compute_predictions(model, loader, validation, device)
 
-    return torch.sum(y_pred == y_true).item() / len(y_true)
+    return torch.sum(y_pred == y_true).item() / len(y_true), loss
 
 
 class Metrics():
@@ -106,6 +109,17 @@ class TrainingMetrics(Metrics):
     def set_run(self, run: int = 0):
         
         self.run = run
+        
+    def get_objective(self):
+        
+        df = pd.DataFrame(self.storage)
+        
+        last_epoch = df.loc[df.groupby('metric')['step'].idxmax()]
+        objectives = pd.Series(last_epoch.value.values, index=last_epoch.metric).to_dict()
+        
+        # return weighted objective of training and validation accuracy
+        return .5 * objectives['Accuracy - training'] + .5 * objectives['Accuracy - validation']
+
     
     def send_log(self):
     
@@ -131,7 +145,7 @@ class TestingMetrics(Metrics):
     
     def compute_metrics(self, model: nn.Module, loader: DataLoader):
                 
-        self.y_true, self.y_pred = compute_predictions(model, loader)
+        self.y_true, self.y_pred, _ = compute_predictions(model, loader)
         
         # Add testing accuracy
         self.storage.append(

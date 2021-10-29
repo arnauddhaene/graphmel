@@ -24,6 +24,31 @@ To test out different lesion-connection methodologies, a dashboard was developed
 streamlit run src/representation.py
 ```
 
+### Hyper-parameter optimization
+
+Raytune is set up to run a hyper-parameter optimization in `hpopt.py`. You can extend or constrain the hyper-parameter options in the `tune.run` call. To run the optimization:
+
+```bash
+python src/hpopt.py
+```
+
+with any of the optional parameters described below.
+
+```bash
+Usage: hpopt.py [OPTIONS]
+
+Options:
+  --model [GNN|GAT|GIN|DiffPool]  Model architecture choice.
+  --connectivity [fully|organ|wasserstein]
+                                  Graph connectivity choice.
+  --epochs INTEGER                Number of training epochs.
+  --test-size FLOAT               Test set size in ratio.
+  --seed INTEGER                  Random seed.
+  --cv INTEGER                    Cross-validation splits.
+  --verbose INTEGER               Print out info for debugging purposes.
+  --help                          Show this message and exit.
+```
+
 
 ### MLflow
 

@@ -1,0 +1,14 @@
+{
+    "context": "< click.core.Context object at 0x7fa3ba07e580 >",
+    "verbose": -1,
+    "model": "GAT",
+    "connectivity": "wasserstein",
+    "epochs": 50,
+    "test_size": 0.2,
+    "seed": 27,
+    "cv": 5,
+    "lr": 0.001,
+    "decay": 0.001,
+    "hidden_dim": 128,
+    "batch_size": 4
+}
