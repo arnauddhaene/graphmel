@@ -1,8 +1,11 @@
+import os
+
 import click
 
 from ray import tune
 
 from run import run
+from utils import BASE_DIR
 
 
 @click.command()
@@ -10,7 +13,7 @@ from run import run
               type=click.Choice(['GNN', 'GAT', 'GIN', 'DiffPool'], case_sensitive=False),
               help="Model architecture choice.")
 @click.option('--connectivity', default='wasserstein',
-              type=click.Choice(['fully', 'organ', 'wasserstein'], case_sensitive=False),
+              type=click.Choice(['fully', 'wasserstein'], case_sensitive=False),
               help="Graph connectivity choice.")
 @click.option('--epochs', default=50,
               help="Number of training epochs.")
@@ -20,7 +23,7 @@ from run import run
               help="Random seed.")
 @click.option('--cv', default=5,
               help="Cross-validation splits.")
-@click.option('--verbose', default=1, type=int,
+@click.option('--verbose', default=-1, type=int,
               help="Print out info for debugging purposes.")
 @click.pass_context
 def tune_hyperparams(ctx: click.Context, model, connectivity, epochs,
@@ -30,18 +33,21 @@ def tune_hyperparams(ctx: click.Context, model, connectivity, epochs,
         invoke_run,
         config=dict(
             context=ctx, verbose=verbose,
-            model=model,
-            connectivity=connectivity, epochs=epochs,
+            model=model, connectivity=connectivity,
+            epochs=epochs,
             test_size=test_size, seed=seed, cv=cv,
             lr=tune.grid_search([1e-1, 1e-2, 1e-3, 1e-4]),
-            decay=tune.grid_search([1e-2, 1e-3]),
+            decay=tune.grid_search([1e-1, 1e-2, 1e-3]),
             hidden_dim=tune.choice([16, 32, 64, 128]),
-            batch_size=tune.choice([4, 8, 16])
+            batch_size=tune.choice([1, 2, 4, 8, 16])
         ))
     
     result = analysis.get_best_config(metric='objective', mode='max')
     
     print(f"Best configuration: {result}")
+    
+    with open(os.path.join(BASE_DIR, 'hpopt-results.csv'), 'a') as rfile:
+        rfile.write(','.join(list(map(str, result.values()))[2:]))
 
     
 def invoke_run(config):

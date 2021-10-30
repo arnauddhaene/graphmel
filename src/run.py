@@ -59,7 +59,7 @@ def run(model, connectivity,
         experiment = mlflow.get_experiment(experiment_id)
     
     timestamp = dt.datetime.today()
-    mlflow.start_run(experiment_id=experiment.experiment_id)
+    mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model)
     
     mlflow.log_param('Cross-validation splits', cv)
     mlflow.log_param('Learning Rate', lr)
@@ -73,7 +73,7 @@ def run(model, connectivity,
     model_args = dict(
         num_classes=2,
         hidden_dim=hidden_dim,
-        node_features_dim=43)
+        node_features_dim=44)
     
     if model == 'GNN':
         model = BaselineGNN(layer_type='GraphConv', **model_args).to(device)
