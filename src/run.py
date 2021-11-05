@@ -1,8 +1,7 @@
 import os
-import click
 import time
+import click
 import datetime as dt
-
 from tqdm import tqdm
 
 import torch
@@ -43,13 +42,15 @@ from utils import load_dataset, ASSETS_DIR
               help="Random seed.")
 @click.option('--cv', default=5,
               help="Cross-validation splits.")
+@click.option('--distance', default=0.5,
+              help="Wasserstein distance threshold for graph creation.")
 @click.option('--experiment-name', default='Default',
               help="Assign run to experiment.")
 @click.option('--verbose', default=1, type=int,
               help="Print out info for debugging purposes.")
 def run(model, connectivity,
         epochs, lr, decay, hidden_dim, batch_size,
-        test_size, seed, cv,
+        test_size, seed, cv, distance,
         experiment_name, verbose):
     
     experiment = mlflow.get_experiment_by_name(experiment_name)
@@ -67,6 +68,8 @@ def run(model, connectivity,
     mlflow.log_param('Batch Size', batch_size)
     mlflow.log_param('Connectivity', connectivity)
     mlflow.log_param('Hidden dimensions', hidden_dim)
+    if connectivity == 'wasserstein':
+        mlflow.log_param('Wasserstein threshold', distance)
         
     device = "cuda" if torch.cuda.is_available() else "cpu"
         
@@ -80,6 +83,8 @@ def run(model, connectivity,
     elif model == 'GAT':
         model = BaselineGNN(layer_type='GAT', **model_args).to(device)
     elif model == 'DiffPool':
+        # 9 is the median amount of nodes in each graph
+        # TODO: make this pooling approach more data-driven
         model = DiffPool(**model_args, num_nodes=[9]).to(device)
     elif model == 'GIN':
         model = BaselineGNN(layer_type='GIN', **model_args).to(device)
@@ -96,7 +101,7 @@ def run(model, connectivity,
     
     dataset_train, dataset_test = \
         load_dataset(connectivity=connectivity, test_size=test_size, seed=seed,
-                     dense=model.is_dense(), verbose=verbose)
+                     distance=distance, dense=model.is_dense(), verbose=verbose)
     
     start = time.time()
     

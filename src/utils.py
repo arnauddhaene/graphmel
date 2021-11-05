@@ -29,7 +29,7 @@ from torch_geometric.transforms import ToDense
 BASE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir)
 DATA_DIR = os.path.join(BASE_DIR, 'data/')
 ASSETS_DIR = os.path.join(BASE_DIR, 'assets/')
-CHECKPOINTS_DIR = os.path.join(DATA_DIR, 'checkpoints')
+CHECKPOINTS_DIR = os.path.join(DATA_DIR, 'checkpoints/')
 
 # CONNECTION_DIR = '/Volumes/lts4-immuno/'
 CONNECTION_DIR = '/Users/arnauddhaene/Downloads/'
@@ -69,7 +69,7 @@ def fetch_dataset_id(fname: str) -> Tuple[str, int, int, bool]:
 
 def load_dataset(
     connectivity: str = 'wasserstein', test_size: float = 0.2, seed: int = 27,
-    dense: bool = True, verbose: int = 0
+    distance: float = 0.5, dense: bool = True, verbose: int = 0
 ) -> Tuple[List[Data], List[Data]]:
     """
     Get training, validation, and testing DataLoaders.
@@ -78,6 +78,7 @@ def load_dataset(
     Args:
         connectivity (str, optional): node connectivity method.. Defaults to 'wasserstein'.
         test_size (float, optional): Ratio of test set. Defaults to 0.2.
+        distance (float, optional): Wasserstein distance threshold for graph creation. Defaults to 0.5.
         seed (int, optional): Random seed. Defaults to 27.
         dense (bool, optional): Output a DenseDataLoader
         verbose (int, optional): tuneable parameter for output verbosity. Defaults to 1.
@@ -112,12 +113,12 @@ def load_dataset(
             preprocess(labels, lesions, patients,
                        test_size=test_size, seed=seed, verbose=verbose)
             
-        dataset_train = create_dataset(X=X_train, Y=y_train, dense=dense,
+        dataset_train = create_dataset(X=X_train, Y=y_train, dense=dense, distance=distance,
                                        connectivity=connectivity, verbose=verbose)
         
         # In the test loader we set the batch size to be
         # equal to the size of the whole test set
-        dataset_test = create_dataset(X=X_test, Y=y_test, dense=dense,
+        dataset_test = create_dataset(X=X_test, Y=y_test, dense=dense, distance=distance,
                                       connectivity=connectivity, verbose=verbose)
     
         fpath = os.path.join(CHECKPOINTS_DIR,
@@ -357,7 +358,7 @@ def preprocess(
     return X_train, X_test, y_train, y_test
 
 
-def fetch_data(verbose: int = 1) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
     """Fetch data from sources explicited in __file__ constants. First filtering of raw data.
 
     Args:

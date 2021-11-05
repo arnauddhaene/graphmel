@@ -3,7 +3,7 @@ import datetime as dt
 
 import pandas as pd
 
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix, roc_auc_score
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -150,6 +150,12 @@ class TestingMetrics(Metrics):
         self.storage.append(
             dict(metric='Accuracy - testing',
                  value=accuracy_score(self.y_true, self.y_pred))
+        )
+        
+        # Add ROC AUC score
+        self.storage.append(
+            dict(metric='ROC AUC - testing',
+                 value=roc_auc_score(self.y_true, self.y_pred))
         )
         
         # Add other binary classification metrics
