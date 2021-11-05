@@ -384,7 +384,7 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     lesions = lesions[['gpcr_id', 'study_name', *radiomics_features, 'assigned_organ']]
 
     if verbose > 0:
-        print(f'Post-1 study lesions extracted for {len(lesions.gpcr_id.unique())} patients')
+        print(f"Post-1 study lesions extracted for {len(lesions.gpcr_id.unique())} patients")
 
     # LABELS
     progression = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1],
@@ -392,14 +392,14 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     progression['pseudorecist'] = progression.pseudorecist.eq('NPD').mul(1)
 
     # We need to filter out studies who do not have an associated progression label
-    # Add prediction score label from progression df
+    # Add label from progression DataFrame
     lesions = lesions.merge(progression[['gpcr_id', 'study_name', 'pseudorecist']],
                             on=['gpcr_id', 'study_name'], how='inner')
     lesions = lesions[lesions.pseudorecist.notna()]
     lesions.drop(columns='pseudorecist', inplace=True)
 
     if verbose > 0:
-        print(f'Post-1 study labels added for {len(lesions.gpcr_id.unique())} patients')
+        print(f"Post-1 study labels added for {len(lesions.gpcr_id.unique())} patients")
         
     # PATIENT-LEVEL
     patients = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['patients']))
