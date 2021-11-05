@@ -118,7 +118,12 @@ class TrainingMetrics(Metrics):
         objectives = pd.Series(last_epoch.value.values, index=last_epoch.metric).to_dict()
         
         # return weighted objective of training and validation accuracy
-        return .5 * objectives['Accuracy - training'] + .5 * objectives['Accuracy - validation']
+        if 'Accuracy - validation' in objectives.keys() and 'Accuracy - training' in objectives.keys():
+            return .5 * objectives['Accuracy - training'] + .5 * objectives['Accuracy - validation']
+        elif 'Accuracy - training' in objectives.keys():
+            return objectives['Accuracy - training']
+        else:
+            raise ValueError("Metrics don't allow for correct computation of objective")
 
     def send_log(self):
     

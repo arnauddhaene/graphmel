@@ -2,20 +2,16 @@ import os
 import time
 import click
 import datetime as dt
-from tqdm import tqdm
 
 import torch
 from torch_geometric.loader import DataLoader, DenseDataLoader
-from torch.utils.data import SubsetRandomSampler
-
-from sklearn.model_selection import KFold
 
 import mlflow
 
 from metrics import TrainingMetrics, TestingMetrics
 from models.baseline import BaselineGNN
 from models.diffpool import DiffPool
-from train import train
+from train import run_training
 from utils import load_dataset, ASSETS_DIR
 
 
@@ -107,35 +103,10 @@ def run(model, connectivity,
     
     metrics = TrainingMetrics()
     
-    kfold = KFold(n_splits=cv, shuffle=True)
+    run_training(model, dataset_train, 
+                 metrics=metrics, cv=cv, lr=lr, decay=decay, batch_size=batch_size,
+                 epochs=epochs, dense=model.is_dense(), verbose=verbose)
     
-    for fold, (I_train, I_valid) in tqdm(enumerate(kfold.split(dataset_train)),
-                                         total=cv, leave=False, disable=(verbose < 0)):
-        
-        metrics.set_run(fold)
-        
-        model.reset()
-        
-        if verbose > 0 and fold == 0:
-            print(f'Fold no. {fold} | '
-                  f'Train size: {len(I_train)}, Valid size: {len(I_valid)} | '
-                  f'Intersection: {len(list(set(I_train) & set(I_valid)))}')
-        
-        sampler_train = SubsetRandomSampler(I_train)
-        sampler_valid = SubsetRandomSampler(I_valid)
-        
-        loader_train_args = dict(dataset=dataset_train, batch_size=8, sampler=sampler_train)
-        loader_valid_args = dict(dataset=dataset_train, batch_size=8, sampler=sampler_valid)
-        
-        loader_train = DenseDataLoader(**loader_train_args) if model.is_dense() \
-            else DataLoader(**loader_train_args)
-        loader_valid = DenseDataLoader(**loader_valid_args) if model.is_dense() \
-            else DataLoader(**loader_valid_args)
-                
-        train(model, loader_train, loader_valid, metrics,
-              learning_rate=lr, weight_decay=decay, epochs=epochs, device=device,
-              verbose=verbose)
-        
     metrics.send_log()
     
     end = time.time()
