@@ -33,7 +33,7 @@ CHECKPOINTS_DIR = os.path.join(DATA_DIR, 'checkpoints/')
 
 # CONNECTION_DIR = '/Volumes/lts4-immuno/'
 CONNECTION_DIR = '/Users/arnauddhaene/Downloads/'
-DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04', 'data_2021-10-12']
+DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04', 'data_2021-10-12', 'data_2021-11-06']
 
 FILES = {
     'data_2021-09-20': dict(
@@ -50,6 +50,10 @@ FILES = {
         lesions='melanoma_lesion-info_organ-overlap_2021-10-12_anonymized_cleaned_all.csv',
         patients='melanoma_patient-level_summary_anonymized.csv',
         studies='melanoma_study_level_summary_anonymized.csv'
+    ),
+    'data_2021-11-06': dict(
+        lesions='melanoma_lesions-radiomics.csv',
+        distances='post-01-wasserstein-distances.csv'
     )
 }
 
