@@ -103,7 +103,7 @@ def run(model, connectivity,
     
     metrics = TrainingMetrics()
     
-    run_training(model, dataset_train, 
+    run_training(model, dataset_train,
                  metrics=metrics, cv=cv, lr=lr, decay=decay, batch_size=batch_size,
                  epochs=epochs, dense=model.is_dense(), verbose=verbose)
     
