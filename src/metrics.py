@@ -61,7 +61,7 @@ def compute_predictions(model: torch.nn.Module, loader: DataLoader, validation: 
     y_pred = torch.cat(y_preds).flatten()
     y_true = torch.cat(y_trues).flatten()
     
-    return y_true, y_pred, loss if validation else None
+    return y_true, y_pred, loss / len(loader.dataset) if validation else None
 
 
 def evaluate(model: torch.nn.Module, loader: DataLoader, validation: bool = False,

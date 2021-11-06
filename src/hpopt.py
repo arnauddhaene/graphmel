@@ -47,7 +47,7 @@ def tune_hyperparams(ctx: click.Context, model, connectivity, epochs,
     print(f"Best configuration: {result}")
     
     with open(os.path.join(BASE_DIR, 'hpopt-results.csv'), 'a') as rfile:
-        rfile.write(','.join(list(map(str, result.values()))[2:]))
+        rfile.write(','.join(list(map(str, result.values()))[2:]) + '\n')
 
     
 def invoke_run(config):
