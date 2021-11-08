@@ -35,6 +35,7 @@ figure_labels = {
     **{f'{metric}_suv_val': f'{metric.capitalize()} SUV' for metric in ['max', 'mean', 'min', 'sd']}
 }
 WIDTH = 900
+HEIGHT = 400
 
 
 def preprocess(
@@ -238,7 +239,7 @@ m4.metric('Isolated nodes', graph.has_isolated_nodes())
 G = to_networkx(graph, to_undirected=True)
 pos = nx.kamada_kawai_layout(G)
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize=(6, 3))
 
 if color_metric == 'assigned_organ':
     cmap = plt.cm.tab20

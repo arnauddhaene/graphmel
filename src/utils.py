@@ -12,8 +12,6 @@ from itertools import permutations
 import pandas as pd
 import numpy as np
 
-from scipy.stats import wasserstein_distance
-
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
@@ -52,7 +50,7 @@ FILES = {
         studies='melanoma_study_level_summary_anonymized.csv'
     ),
     'data_2021-11-06': dict(
-        lesions='melanoma_lesions-radiomics.csv',
+        radiomics='melanoma_lesions-radiomics.csv',
         distances='post-01-wasserstein-distances.csv'
     )
 }
@@ -162,9 +160,34 @@ def create_dataset(
     lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
     # Filter out benign lesions and non-post-1 studies
     lesions = lesions[(lesions.pars_classification_petct != 'benign') & (lesions.study_name == 'post-01')]
+    radiomics = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
+                                         FILES[DATA_FOLDERS[3]]['radiomics']))
+    radiomics['study_name'] = radiomics.study_name.apply(lambda sn: '-'.join(sn[1:].split('_')))
+    radiomics_features = ['vol_ccm', 'max_suv_val', 'mean_suv_val', 'min_suv_val', 'sd_suv_val']
+    lesions.drop(columns=radiomics_features, inplace=True)
+    lesions = lesions.merge(radiomics, on=['gpcr_id', 'study_name', 'lesion_label_id'], how='inner')
+    
+    distances = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
+                                         FILES[DATA_FOLDERS[3]]['distances']))
+    
+    # Get rid of invalid distances
+    valid_lesions_per_patient = lesions.groupby('gpcr_id').lesion_label_id.unique().to_dict()
+    
+    def is_valid_distance(row):
+    
+        valid_lesions = valid_lesions_per_patient.get(int(row.gpcr_id))
+        
+        if valid_lesions is None:
+            return False
+
+        intersection = set(valid_lesions) & set([row.lesion_i, row.lesion_j])
+        
+        return len(intersection) == 2
+    
+    distances['valid'] = distances.apply(is_valid_distance, axis=1)
+    distances = distances[distances.valid]
     
     dataset = []
-    skipped = 0
     
     if dense:
         max_num_nodes = lesions.groupby('gpcr_id').size().max()
@@ -181,11 +204,6 @@ def create_dataset(
         num_nodes = pdf.shape[0]
         edge_index = []
         
-        # Skip single-noded graphs
-        if num_nodes < 2:
-            skipped += 1
-            continue
-
         # Connect lesions using different methodologies
         if connectivity == 'organ':
             # Connect all lesions that are assigned to the same organ
@@ -200,18 +218,11 @@ def create_dataset(
             edge_index = list(permutations(range(num_nodes), 2, ))
             
         elif connectivity == 'wasserstein':
-            # Use the mean and std of the SUV of each lesion to simulate SUV distributions (normal)
-            # and subsequently connect nodes with similar SUV distributions using the Wasserstein distance
-            # as a distance metric
-            for i in range(num_nodes):
-                source_mean, source_sd = pdf.loc[i].mean_suv_val, pdf.loc[i].sd_suv_val
-                source_distribution = np.random.normal(source_mean, source_sd, 1000)
-                
-                targets = [id for id, mu, sd in zip(pdf.index, pdf.mean_suv_val, pdf.sd_suv_val)
-                           if wasserstein_distance(source_distribution,
-                                                   np.random.normal(mu, sd, 1000)) < distance]
-
-                edge_index.extend([[i, j] for j in targets])
+            wanted_edges = distances[(distances.gpcr_id == patient) \
+                                     & (distances.wasserstein_distance < distance)]
+            edge_index = wanted_edges[['lesion_i', 'lesion_j']].to_numpy().astype(int)
+            # Add edges in both directions
+            edge_index = np.concatenate([edge_index, np.flip(edge_index, axis=1)])
             
         else:
             raise ValueError(f'Connectivity value not accepted: {connectivity}.'
@@ -219,15 +230,16 @@ def create_dataset(
 
         edge_index = torch.tensor(edge_index).t().long()
     
+        # Skip graph if there are no edges
+        if edge_index.shape[1] == 0:
+            continue
+        
         x = torch.tensor(X.loc[patient].reset_index(drop=True).to_numpy().astype(np.float32))
         y = torch.tensor(Y.loc[patient])
 
         data = Data(x=x, edge_index=edge_index, num_nodes=num_nodes, y=y.reshape(-1))
 
         dataset.append(to_dense(data) if dense else data)
-        
-    if verbose > 0 and skipped > 0:
-        print(f'Skipped {skipped} graphs as they have less than 2 nodes.')
         
     return dataset
 
@@ -383,8 +395,18 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     multiple_lesions = lesions.groupby('gpcr_id').size().gt(1)
     multiple_lesions = multiple_lesions.index[multiple_lesions.values]
     lesions = lesions[lesions.gpcr_id.isin(multiple_lesions)]
-    # Keep only radiomics features and assigned organ
+    # RADIOMICS
+    radiomics = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
+                                         FILES[DATA_FOLDERS[3]]['radiomics']))
+    radiomics['study_name'] = radiomics.study_name.apply(lambda sn: '-'.join(sn[1:].split('_')))
     radiomics_features = ['vol_ccm', 'max_suv_val', 'mean_suv_val', 'min_suv_val', 'sd_suv_val']
+    lesions.drop(columns=radiomics_features, inplace=True)
+    lesions = lesions.merge(radiomics, on=['gpcr_id', 'study_name', 'lesion_label_id'], how='inner')
+    # Remove volume and add voxels
+    # (as they are highly correlated and voxels is more consistent with new values)
+    radiomics_features.append('voxels')
+    radiomics_features.remove('vol_ccm')
+    # Keep only radiomics features and assigned organ
     lesions = lesions[['gpcr_id', 'study_name', *radiomics_features, 'assigned_organ']]
 
     if verbose > 0:

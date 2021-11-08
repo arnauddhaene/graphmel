@@ -68,11 +68,14 @@ def run(model, connectivity,
         mlflow.log_param('Wasserstein threshold', distance)
         
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    dataset_train, dataset_test = \
+        load_dataset(connectivity=connectivity, test_size=test_size, seed=seed,
+                     distance=distance, dense=(model == 'DiffPool'), verbose=verbose)
         
     model_args = dict(
         num_classes=2,
         hidden_dim=hidden_dim,
-        node_features_dim=44)
+        node_features_dim=dataset_train[0].x.shape[1])
     
     if model == 'GNN':
         model = BaselineGNN(layer_type='GraphConv', **model_args).to(device)
@@ -87,18 +90,14 @@ def run(model, connectivity,
     else:
         raise ValueError(f'Could not instanciate {model} model')
         
-    mlflow.log_param('Model', model)
-    mlflow.log_param('Weights', model.param_count())
-        
     if verbose > 0:
         print(f"{model} instanciated with {model.param_count()} parameters.\n"
               f"Fetching {connectivity}-connected graph representations and storing "
               f"into DataLoaders with batch size {batch_size}...")
     
-    dataset_train, dataset_test = \
-        load_dataset(connectivity=connectivity, test_size=test_size, seed=seed,
-                     distance=distance, dense=model.is_dense(), verbose=verbose)
-    
+    mlflow.log_param('Model', model)
+    mlflow.log_param('Weights', model.param_count())
+        
     start = time.time()
     
     metrics = TrainingMetrics()
