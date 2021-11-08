@@ -30,7 +30,7 @@ ASSETS_DIR = os.path.join(BASE_DIR, 'assets/')
 CHECKPOINTS_DIR = os.path.join(DATA_DIR, 'checkpoints/')
 
 # CONNECTION_DIR = '/Volumes/lts4-immuno/'
-CONNECTION_DIR = '/Users/arnauddhaene/Downloads/'
+CONNECTION_DIR = '/Users/adhaene/Downloads/'
 DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04', 'data_2021-10-12', 'data_2021-11-06']
 
 FILES = {
@@ -221,9 +221,18 @@ def create_dataset(
             wanted_edges = distances[(distances.gpcr_id == patient) \
                                      & (distances.wasserstein_distance < distance)]
             edge_index = wanted_edges[['lesion_i', 'lesion_j']].to_numpy().astype(int)
+            
+            # Replace lesion_label_id by index from preprocessed data
+            # Inspired from Method #3 of:
+            # https://stackoverflow.com/questions/55949809/efficiently-replace-elements-in-array-based-on-dictionary-numpy-python
+            keys, values = pdf.lesion_label_id, pdf.index
+            mapping = np.zeros(keys.max() + 1, dtype=values.dtype)
+            mapping[keys] = values
+            edge_index = mapping[edge_index]
+            
             # Add edges in both directions
             edge_index = np.concatenate([edge_index, np.flip(edge_index, axis=1)])
-            
+                
         else:
             raise ValueError(f'Connectivity value not accepted: {connectivity}.'
                              "Must be either 'fully', 'wasserstein', or 'organ'.")
@@ -259,7 +268,7 @@ class Preprocessor:
         self.pipe = pipe
         self.feats_out_fn = feats_out_fn
         
-    def get_feature_names(self) -> List[str]:
+    def get_feature_names_out(self) -> List[str]:
         """Yields list of feature names available on pipe output.
 
         Returns:
@@ -282,7 +291,7 @@ class Preprocessor:
             df (pd.DataFrame): input data.
             index (List, optional): output `gpcr_id` index. Defaults to None. If None, will use `df.index`.
             columns (List[str], optional): [description]. Defaults to None.
-                If None, will call `get_feature_names`.
+                If None, will call `get_feature_names_out`.
 
         Returns:
             pd.DataFrame: output data.
@@ -291,7 +300,7 @@ class Preprocessor:
             index = df.index
            
         if columns is None:
-            columns = self.get_feature_names()
+            columns = self.get_feature_names_out()
     
         return pd.DataFrame(self.pipe.transform(df), index=index, columns=columns)
 
@@ -354,8 +363,9 @@ def preprocess(
     patients_pp = Preprocessor(
         pipe=clf_patients,
         feats_out_fn=lambda c: (c.named_steps['imputers'].transformers_[0][2] \
-                                + list(c.named_steps['preprocess'].transformers_[1][1].get_feature_names()) \
-                                + c.named_steps['preprocess'].transformers_[2][1].get_feature_names())
+                                + list(c.named_steps['preprocess'].transformers_[1][1] \
+                                .get_feature_names_out()) \
+                                + c.named_steps['preprocess'].transformers_[2][1].get_feature_names_out())
     )
 
     lesions_pp.fit(lesions.loc[I_train])
