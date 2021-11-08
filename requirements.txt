@@ -11,3 +11,5 @@ streamlit
 torch==1.9.0
 torch_geometric==2.0.1
 tqdm
+seaborn
+matplotlib
