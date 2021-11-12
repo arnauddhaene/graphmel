@@ -68,7 +68,7 @@ class DenseGNN(DenseModule):
         in_channels: int,
         hidden_dim: int,
         out_channels: int,
-        conv_layers: int = 2
+        conv_layers: int = 5
     ):
         super(DenseGNN, self).__init__()
         
