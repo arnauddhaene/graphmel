@@ -365,7 +365,8 @@ def preprocess(
         feats_out_fn=lambda c: (c.named_steps['imputers'].transformers_[0][2] \
                                 + list(c.named_steps['preprocess'].transformers_[1][1] \
                                 .get_feature_names_out()) \
-                                + c.named_steps['preprocess'].transformers_[2][1].get_feature_names_out())
+                                + list(c.named_steps['preprocess'].transformers_[2][1] \
+                                .get_feature_names_out()))
     )
 
     lesions_pp.fit(lesions.loc[I_train])
