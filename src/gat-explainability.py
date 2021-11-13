@@ -42,11 +42,12 @@ st.title("Graph Structure Learning using trained GAT")
 # Select dataset
 files = os.listdir(CHECKPOINTS_DIR)
 
-filename = st.sidebar.selectbox("Please select a dataset", files, index=1)
+filename = st.sidebar.selectbox("Please select a dataset", files, index=2)
 infile = open(os.path.join(CHECKPOINTS_DIR, filename), 'rb')
 
 dataset_train, dataset_test = pickle.load(infile)
 
+# Display dataset metrics
 train_metric, test_metric = st.sidebar.columns(2)
 
 train_metric.metric('Train set size', len(dataset_train))
@@ -55,26 +56,13 @@ test_metric.metric('Test set size', len(dataset_test))
 # Select datapoint
 all_graphs = [*dataset_train, *dataset_test]
 idx = st.select_slider("Please select a datapoint by index", range(len(all_graphs)))
-
 graph = all_graphs[idx]
-
-G = to_networkx(graph, to_undirected=True)
-pos = nx.kamada_kawai_layout(G)
-
-fig, ax = plt.subplots(1, 2, figsize=(8, 3))
 
 X_train, _, _, _ = preprocess(*fetch_data())
 
-color_metric = st.selectbox('Color_metric', enumerate(X_train.columns),
-                            format_func=lambda kv: kv[1])
+color_metric = st.selectbox('Color_metric', enumerate(X_train.columns), format_func=lambda kv: kv[1])
 
-colors_ = graph.x[:, color_metric[0]]
-sm = plt.cm.ScalarMappable(cmap=plt.cm.Blues,
-                           norm=plt.Normalize(colors_.min(), colors_.max()))
-
-nx.draw_networkx(G, pos, node_color=colors_, cmap=plt.cm.Blues, ax=ax[0])
-plt.colorbar(sm, label=X_train.columns[color_metric[0]], ax=ax[0])
-
+# Fetch model
 model_args = dict(num_classes=2, hidden_dim=64, node_features_dim=graph.x.shape[1])
 
 model = BaselineGNN(layer_type='GAT', **model_args)
@@ -97,36 +85,47 @@ def get_attention_weights(model: torch.nn.Module, graph: Data) -> torch.Tensor:
     return edge_index, alpha
 
 
+# Extract learned edge weights
 edge_index, alpha = get_attention_weights(model, graph)
-
 non_self_loop_idx = np.array(list(map(len, map(set, edge_index.t().tolist())))) > 1
-
 edge_index, alpha = edge_index[:, non_self_loop_idx], alpha[non_self_loop_idx]
+
+# Display graphs
+fig, ax = plt.subplots(1, figsize=(8, 3))
 
 G_ = to_networkx(Data(edge_index=edge_index))
 pos_ = nx.kamada_kawai_layout(G_)
 
-cmap = plt.cm.Reds
-sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(alpha.min(), alpha.max()))
+node_colors = graph.x[:, color_metric[0]]
+node_cmap = plt.cm.Blues
+node_sm = plt.cm.ScalarMappable(cmap=node_cmap, norm=plt.Normalize(node_colors.min(), node_colors.max()))
 
-nx.draw_networkx(G_, pos_, width=2.0,
-                 edge_color=alpha.flatten().reshape(-1).tolist(),
-                 edge_cmap=cmap, ax=ax[1])
+edge_cmap = plt.cm.Reds
+edge_colors = alpha.flatten().reshape(-1).tolist()
+edge_sm = plt.cm.ScalarMappable(cmap=edge_cmap, norm=plt.Normalize(min(edge_colors), max(edge_colors)))
 
-plt.colorbar(sm, label='Learned edge weight')
+nx.draw_networkx(G_, pos_, width=2.0, ax=ax,
+                 node_color=node_colors, cmap=node_cmap,
+                 edge_color=edge_colors, edge_cmap=edge_cmap)
+
+plt.colorbar(node_sm, label=' '.join(X_train.columns[color_metric[0]].split('_')).capitalize())
+plt.colorbar(edge_sm, label=r'Edge weight')
 
 st.pyplot(fig)
 
-# Adjacency matrices
+# Compute adjacency matrices
 A = np.zeros((graph.num_nodes, graph.num_nodes))
 
 for (i, j), a in zip(graph.edge_index.t(), alpha):
     A[i, j] = a
 
+# Display adjacency matrices
 fig, ax = plt.subplots(1, 2, figsize=(8, 3))
 
-sns.heatmap(nx.adjacency_matrix(G).todense(), cmap=cmap, ax=ax[0])
+sns.heatmap(nx.adjacency_matrix(to_networkx(graph)).todense(), cbar=False, ax=ax[0])
+ax[0].set_title(r'$A$ from SUV similarity')
 
-sns.heatmap(A, cmap=cmap, ax=ax[1])
+sns.heatmap(A, cmap=plt.cm.Reds, ax=ax[1])
+ax[1].set_title(r'Learned $A$ from last GAT layer')
 
 st.pyplot(fig)
