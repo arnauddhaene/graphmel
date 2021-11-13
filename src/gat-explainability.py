@@ -67,8 +67,13 @@ model_args = dict(num_classes=2, hidden_dim=64, node_features_dim=graph.x.shape[
 
 model = BaselineGNN(layer_type='GAT', **model_args)
 
+# Wasserstein with distance 0.5 connected
 storage_path = os.path.join(ASSETS_DIR, 'models/',
                             'Baseline GNN with 5 GAT layers-2021-11-12 16:22:02.947209.pkl')
+
+# Fully connected model
+# storage_path = os.path.join(ASSETS_DIR, 'models/',
+#                             'Baseline GNN with 5 GAT layers-2021-11-13 17:02:37.658111.pkl')
 
 model.load_state_dict(torch.load(storage_path))
 
@@ -90,6 +95,12 @@ edge_index, alpha = get_attention_weights(model, graph)
 non_self_loop_idx = np.array(list(map(len, map(set, edge_index.t().tolist())))) > 1
 edge_index, alpha = edge_index[:, non_self_loop_idx], alpha[non_self_loop_idx]
 
+# Compute adjacency matrix of learned graph structure
+A = np.zeros((graph.num_nodes, graph.num_nodes))
+
+for (i, j), a in zip(edge_index.t(), alpha):
+    A[i, j] = a
+
 # Display graphs
 fig, ax = plt.subplots(1, figsize=(8, 3))
 
@@ -101,7 +112,9 @@ node_cmap = plt.cm.Blues
 node_sm = plt.cm.ScalarMappable(cmap=node_cmap, norm=plt.Normalize(node_colors.min(), node_colors.max()))
 
 edge_cmap = plt.cm.Reds
-edge_colors = alpha.flatten().reshape(-1).tolist()
+# edge_color != alpha because networkx reorders edges by sorting node no.
+# because of this, we need to use G_.edges() to reorder alpha accordingly
+edge_colors = [A[i, j] for i, j in map(list, G_.edges())]
 edge_sm = plt.cm.ScalarMappable(cmap=edge_cmap, norm=plt.Normalize(min(edge_colors), max(edge_colors)))
 
 nx.draw_networkx(G_, pos_, width=2.0, ax=ax,
@@ -112,12 +125,6 @@ plt.colorbar(node_sm, label=' '.join(X_train.columns[color_metric[0]].split('_')
 plt.colorbar(edge_sm, label=r'Edge weight')
 
 st.pyplot(fig)
-
-# Compute adjacency matrices
-A = np.zeros((graph.num_nodes, graph.num_nodes))
-
-for (i, j), a in zip(graph.edge_index.t(), alpha):
-    A[i, j] = a
 
 # Display adjacency matrices
 fig, ax = plt.subplots(1, 2, figsize=(8, 3))
