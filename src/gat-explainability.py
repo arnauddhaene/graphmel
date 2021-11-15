@@ -71,7 +71,7 @@ model = BaselineGNN(layer_type='GAT', **model_args)
 storage_path = os.path.join(ASSETS_DIR, 'models/',
                             'Baseline GNN with 5 GAT layers-2021-11-12 16:22:02.947209.pkl')
 
-# Fully connected model
+# # Fully connected model
 # storage_path = os.path.join(ASSETS_DIR, 'models/',
 #                             'Baseline GNN with 5 GAT layers-2021-11-13 17:02:37.658111.pkl')
 
