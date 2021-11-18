@@ -358,7 +358,7 @@ def preprocess(
         ], remainder='passthrough')),
         ('preprocess', ColumnTransformer([
             ('scaler', StandardScaler(), features_range[0:bp[0]]),
-            ('one-hot', OneHotEncoder(handle_unknown='ignore'),
+            ('one-hot', OneHotEncoder(drop='if_binary', handle_unknown='ignore'),
              features_range[bp[0]:bp[1]]),
             ('count-vec', CountVectorizer(analyzer=set), features_range[bp[1]:bp[2]][0])
         ], remainder='passthrough')),
@@ -459,8 +459,7 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     blood_features = ['sex', 'bmi', 'performance_score_ecog', 'ldh_sang_ul', 'neutro_absolus_gl',
                       'eosini_absolus_gl', 'leucocytes_sang_gl', 'NRAS_MUTATION', 'BRAF_MUTATION',
                       'immuno_therapy_type', 'lympho_absolus_gl', 'concomittant_tvec',
-                      'concomittant_LAG3', 'prior_targeted_therapy', 'prior_treatment',
-                      'nivo_maintenance']
+                      'prior_targeted_therapy', 'prior_treatment', 'nivo_maintenance']
     
     # Transform all one-hot encoded features into True/False to avoid scaler
     for feature in blood_features:
