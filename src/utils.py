@@ -232,6 +232,9 @@ def create_dataset(
             
             # Add edges in both directions
             edge_index = np.concatenate([edge_index, np.flip(edge_index, axis=1)])
+            
+            # Add edge weight
+            edge_weight = wanted_edges.wasserstein_distance.to_numpy().astype(float)
                 
         else:
             raise ValueError(f'Connectivity value not accepted: {connectivity}.'
@@ -248,9 +251,10 @@ def create_dataset(
         x = torch.tensor(all_x[:, :18])
         y = torch.tensor(Y.loc[patient])
         graph_features = torch.tensor(all_x[0, 18:])
+        edge_weight = torch.tensor(edge_weight)
         
         data = Data(x=x, graph_features=graph_features, edge_index=edge_index,
-                    num_nodes=num_nodes, y=y.reshape(-1))
+                    edge_weight=edge_weight, num_nodes=num_nodes, y=y.reshape(-1))
 
         dataset.append(to_dense(data) if dense else data)
         
