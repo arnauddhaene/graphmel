@@ -14,6 +14,7 @@ class BaselineGNN(SparseModule):
         num_classes: int,
         hidden_dim: int,
         node_features_dim: int,
+        graph_features_dim: int,
         layer_type: str = 'GraphConv',
         num_layers: int = 5,
     ):
@@ -34,19 +35,22 @@ class BaselineGNN(SparseModule):
             
             self.convs.append(layer)
 
-        self.fc1 = Linear(hidden_dim * 2, hidden_dim)
+        self.fc1 = Linear(hidden_dim * 2 + graph_features_dim, hidden_dim)
         self.fc2 = Linear(hidden_dim, num_classes)
 
         self.readout = LogSoftmax(dim=-1)
 
     def forward(self, data):
         
-        x, edge_index, batch = data.x, data.edge_index, data.batch
+        x, edge_index, batch, graph_features = \
+            data.x, data.edge_index, data.batch, data.graph_features
         
         for step in range(len(self.convs)):
             x = F.relu(self.convs[step](x, edge_index))
         
-        x = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
+        # Concatenate pooling from graph embeddings with graph features
+        x = torch.cat(
+            [gmp(x, batch), gap(x, batch), graph_features.reshape(batch.unique().size(0), -1)], dim=1)
         
         x = F.relu(self.fc1(x))
         x = F.dropout(x, p=0.5, training=self.training)

@@ -1,5 +1,6 @@
 from typing import List
 
+import torch
 from torch.nn import Linear, LogSoftmax, ModuleList
 import torch.nn.functional as F
 from torch_geometric.nn import DenseGraphConv, dense_diff_pool
@@ -9,7 +10,11 @@ from models.custom import DenseModule
 
 class DiffPool(DenseModule):
     def __init__(
-        self, num_classes: int, hidden_dim: int, node_features_dim: int,
+        self,
+        num_classes: int,
+        hidden_dim: int,
+        graph_features_dim: int,
+        node_features_dim: int,
         num_nodes: List[int] = [50, 5]
     ):
         
@@ -27,14 +32,14 @@ class DiffPool(DenseModule):
                 
         self.embeds.append(DenseGNN(hidden_dim, hidden_dim, hidden_dim))
         
-        self.fc1 = Linear(hidden_dim, hidden_dim)
+        self.fc1 = Linear(hidden_dim + graph_features_dim, hidden_dim)
         self.fc2 = Linear(hidden_dim, num_classes)
 
         self.readout = LogSoftmax(dim=-1)
 
     def forward(self, data):
         
-        x, adj, mask = data.x, data.adj, data.mask
+        x, adj, mask, graph_features = data.x, data.adj, data.mask, data.graph_features
         
         s = self.initial_pool(x, adj, mask)
         x = self.initial_embed(x, adj, mask)
@@ -51,8 +56,9 @@ class DiffPool(DenseModule):
         
         x = x.mean(dim=1)
         
+        x = torch.cat([x, graph_features], dim=1)
+        
         x = F.relu(self.fc1(x))
-        x = F.dropout(x, p=0.5, training=self.training)
         x = self.fc2(x)
         
         return F.log_softmax(x, dim=-1)

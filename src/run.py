@@ -64,16 +64,20 @@ def run(model, connectivity,
     mlflow.log_param('Batch Size', batch_size)
     mlflow.log_param('Connectivity', connectivity)
     mlflow.log_param('Hidden dimensions', hidden_dim)
+    mlflow.log_param('Epochs', epochs)
     if connectivity == 'wasserstein':
         mlflow.log_param('Wasserstein threshold', distance)
+        
+    dense = (model == 'DiffPool')
         
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dataset_train, dataset_test = \
         load_dataset(connectivity=connectivity, test_size=test_size, seed=seed,
-                     distance=distance, dense=(model == 'DiffPool'), verbose=verbose)
+                     distance=distance, dense=dense, verbose=verbose)
         
     model_args = dict(
         num_classes=2,
+        graph_features_dim=dataset_train[0].graph_features.shape[0],
         hidden_dim=hidden_dim,
         node_features_dim=dataset_train[0].x.shape[1])
     

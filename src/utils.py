@@ -243,10 +243,14 @@ def create_dataset(
         if edge_index.shape[1] == 0:
             continue
         
-        x = torch.tensor(X.loc[patient].reset_index(drop=True).to_numpy().astype(np.float32))
+        all_x = X.loc[patient].reset_index(drop=True).to_numpy().astype(np.float32)
+        
+        x = torch.tensor(all_x[:, :18])
         y = torch.tensor(Y.loc[patient])
-
-        data = Data(x=x, edge_index=edge_index, num_nodes=num_nodes, y=y.reshape(-1))
+        graph_features = torch.tensor(all_x[0, 18:])
+        
+        data = Data(x=x, graph_features=graph_features, edge_index=edge_index,
+                    num_nodes=num_nodes, y=y.reshape(-1))
 
         dataset.append(to_dense(data) if dense else data)
         
