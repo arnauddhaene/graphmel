@@ -1,5 +1,6 @@
 import os
 import pickle
+from datetime import datetime
 
 import numpy as np
 import networkx as nx
@@ -42,7 +43,7 @@ st.title("Graph Structure Learning using trained GAT")
 # Select dataset
 files = os.listdir(CHECKPOINTS_DIR)
 
-filename = st.sidebar.selectbox("Please select a dataset", files, index=2)
+filename = st.sidebar.selectbox("Please select a dataset", files, index=0)
 infile = open(os.path.join(CHECKPOINTS_DIR, filename), 'rb')
 
 dataset_train, dataset_test = pickle.load(infile)
@@ -60,22 +61,26 @@ graph = all_graphs[idx]
 
 X_train, _, _, _ = preprocess(*fetch_data())
 
-color_metric = st.selectbox('Color_metric', enumerate(X_train.columns), format_func=lambda kv: kv[1])
-
 # Fetch model
-model_args = dict(num_classes=2, hidden_dim=64, node_features_dim=graph.x.shape[1])
+model_args = dict(num_classes=2, hidden_dim=64,
+                  node_features_dim=graph.x.shape[1],
+                  graph_features_dim=graph.graph_features.shape[0])
 
 model = BaselineGNN(layer_type='GAT', **model_args)
 
 # Wasserstein with distance 0.5 connected
-storage_path = os.path.join(ASSETS_DIR, 'models/',
-                            'Baseline GNN with 5 GAT layers-2021-11-12 16:22:02.947209.pkl')
+models = os.listdir(ASSETS_DIR + 'models/')
+model_dates = list(map(
+    lambda s: datetime.strptime(s[s.find('-') + 1:s.find('.')], '%Y-%m-%d %H:%M:%S'), models))
 
-# # Fully connected model
-# storage_path = os.path.join(ASSETS_DIR, 'models/',
-#                             'Baseline GNN with 5 GAT layers-2021-11-13 17:02:37.658111.pkl')
+valid_dates = (np.array(model_dates) > datetime(2021, 11, 19)) & (np.array(['GAT' in m for m in models]))
 
-model.load_state_dict(torch.load(storage_path))
+# TODO: filter only GAT models
+model_path = st.selectbox("Please select a model", np.array(models)[valid_dates], index=0)
+
+model.load_state_dict(torch.load(os.path.join(ASSETS_DIR, 'models', model_path)))
+
+color_metric = st.selectbox('Color_metric', enumerate(X_train.columns), format_func=lambda kv: kv[1])
 
 
 def get_attention_weights(model: torch.nn.Module, graph: Data) -> torch.Tensor:

@@ -94,7 +94,7 @@ st.write(f"<style> {styles} </style>", unsafe_allow_html=True)
 
 st.title("Graph analytics for immunotherapy response prediction in melanoma")
 
-CONNECTION_DIR = '/Users/arnauddhaene/Downloads/'
+CONNECTION_DIR = '/Users/adhaene/Downloads/'
 
 # Fetch data
 lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
