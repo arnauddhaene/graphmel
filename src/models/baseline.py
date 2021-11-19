@@ -16,7 +16,7 @@ class BaselineGNN(SparseModule):
         node_features_dim: int,
         graph_features_dim: int,
         layer_type: str = 'GraphConv',
-        num_layers: int = 5,
+        num_layers: int = 10,
     ):
         super(BaselineGNN, self).__init__()
         self.layer_type = layer_type
@@ -42,11 +42,17 @@ class BaselineGNN(SparseModule):
 
     def forward(self, data):
         
-        x, edge_index, batch, graph_features = \
-            data.x, data.edge_index, data.batch, data.graph_features
+        x, edge_index, batch, graph_features, edge_weight = \
+            data.x, data.edge_index, data.batch, data.graph_features, data.edge_weight
+
+        # Wasserstein edge weights are added if GraphConv layers are used
+        if self.layer_type == 'GNN':
+            conv_kwargs = dict(edge_weight=edge_weight)
+        else:
+            conv_kwargs = dict()
         
         for step in range(len(self.convs)):
-            x = F.relu(self.convs[step](x, edge_index))
+            x = F.relu(self.convs[step](x, edge_index, **conv_kwargs))
         
         # Concatenate pooling from graph embeddings with graph features
         x = torch.cat(

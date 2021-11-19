@@ -79,7 +79,6 @@ class DenseGNN(DenseModule):
         super(DenseGNN, self).__init__()
         
         self.convs = ModuleList()
-        self.batch_norms = ModuleList()
 
         self.convs.append(DenseGraphConv(in_channels, hidden_dim))
 
