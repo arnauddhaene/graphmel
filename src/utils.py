@@ -399,6 +399,11 @@ def preprocess(
     patients_train = patients_pp.transform(patients.loc[I_train])
     patients_test = patients_pp.transform(patients.loc[I_test])
     
+    # TODO: somehow avoid the merging of these two as the intermediate step means
+    # we need to store more data (duplicating blood data over all lesions)
+    # --> this would imply changing the way we create the dataset
+    #     should totally be possible however
+    
     X_train = pd.merge(lesions_train, patients_train, left_index=True, right_index=True)
     X_test = pd.merge(lesions_test, patients_test, left_index=True, right_index=True)
     
@@ -424,14 +429,18 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     shape = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[4], FILES[DATA_FOLDERS[4]]['shape']),
                         index_col=0)
     shape = standardise_column_names(shape)
+
     # Merge with radiomics
     lesions = lesions.merge(shape, on=['gpcr_id', 'study_name', 'roi_id'], how='inner')
+
     # Filter out benign lesions and non-post-1 studies
-    lesions = lesions[(lesions.pars_suspicious_prob_petct > 0.75) & (lesions.study_name == 'post-01')]
+    lesions = lesions[(lesions.pars_suspicious_prob_petct > 0.75) \
+                      & (lesions.study_name.isin(['pre-01', 'post-01']))]
+
     # Filter out single-lesion studies
-    multiple_lesions = lesions.groupby('gpcr_id').size().gt(1)
+    multiple_lesions = lesions.groupby(['gpcr_id', 'study_name']).size().gt(1)
     multiple_lesions = multiple_lesions.index[multiple_lesions.values]
-    lesions = lesions[lesions.gpcr_id.isin(multiple_lesions)]
+    lesions = lesions.set_index(['gpcr_id', 'study_name']).loc[multiple_lesions].reset_index()
 
     # Keep only radiomics features and assigned organ
     radiomics_features = [
@@ -446,7 +455,7 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
 
     if verbose > 0:
         print(f"Post-1 study lesions extracted for {len(lesions.gpcr_id.unique())} patients")
-
+    
     # LABELS
     progression = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1],
                                            FILES[DATA_FOLDERS[1]]['progression']))
@@ -454,8 +463,8 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
 
     # We need to filter out studies who do not have an associated progression label
     # Add label from progression DataFrame
-    lesions = lesions.merge(progression[['gpcr_id', 'study_name', 'pseudorecist']],
-                            on=['gpcr_id', 'study_name'], how='inner')
+    lesions = lesions.merge(progression[progression.study_name == 'post-02'][['gpcr_id', 'pseudorecist']],
+                            on=['gpcr_id'], how='inner')
     lesions = lesions[lesions.pseudorecist.notna()]
     lesions.drop(columns='pseudorecist', inplace=True)
 
@@ -481,7 +490,7 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
                       'eosini_absolus_gl', 'leucocytes_sang_gl', 'NRAS_MUTATION', 'BRAF_MUTATION',
                       'immuno_therapy_type', 'lympho_absolus_gl', 'concomittant_tvec',
                       'prior_targeted_therapy', 'prior_treatment', 'nivo_maintenance']
-    
+
     # Transform all one-hot encoded features into True/False to avoid scaler
     for feature in blood_features:
         values = blood[feature].value_counts().keys()
@@ -491,28 +500,37 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     patients = patients[['gpcr_id', *patient_features]]
     blood = blood[['gpcr_id', 'n_days_to_treatment_start', *blood_features]]
     blood['study_name'] = 'blood'
-    
-    blood_filtered = pd.DataFrame()
-    
+
     radiomics = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
                                          FILES[DATA_FOLDERS[3]]['radiomics']))
-    
+
     potential_patients = list(set(lesions.gpcr_id) & set(patients.gpcr_id) & set(radiomics.gpcr_id) \
-                              & set(blood.gpcr_id) & set(studies[studies.study_name == 'post-01'].gpcr_id))
-    
+                              & set(blood.gpcr_id) \
+                              & set(studies[studies.study_name.isin(['pre-01', 'post-01'])].gpcr_id))
+ 
+    blood_filtered = pd.DataFrame()
+
     for patient in potential_patients:
         
-        mapper = retrieve_mapper(pd.concat([blood, studies]), patient,
-                                 'study_name', 'n_days_to_treatment_start').reset_index(drop=True)
+        available_studies = studies[(studies.study_name.isin(['pre-01', 'post-01'])) \
+                                    & (studies.gpcr_id == patient)].study_name.unique()
+        
+        for study in available_studies:
+        
+            mapper = retrieve_mapper(pd.concat([blood, studies]), patient,
+                                     'study_name', 'n_days_to_treatment_start').reset_index(drop=True)
 
-        # Get the `n_days_to_treatment_start` of blood results to aggregate
-        wanted_blood_results_idx = get_closest_blood_results(mapper).n_days_to_treatment_start.to_list()
-        bdf = blood[(blood.gpcr_id == patient) \
-                    & (blood.n_days_to_treatment_start.isin(wanted_blood_results_idx))]
+            # Get the `n_days_to_treatment_start` of blood results to aggregate
+            wanted_blood_results_idx = get_closest_blood_results(mapper, study) \
+                .n_days_to_treatment_start.to_list()
+            # Filter and copy to avoid problems when adding study name to each patients study
+            bdf = blood[(blood.gpcr_id == patient) \
+                        & (blood.n_days_to_treatment_start.isin(wanted_blood_results_idx))].copy()
+            bdf['study_name'] = study
+            
+            blood_filtered = pd.concat([blood_filtered, bdf])
         
-        blood_filtered = pd.concat([blood_filtered, bdf])
-        
-    blood = blood_filtered.groupby('gpcr_id').agg({
+    blood = blood_filtered.groupby(['gpcr_id', 'study_name']).agg({
         'bmi': np.mean,
         'performance_score_ecog': np.mean,
         'ldh_sang_ul': np.mean,
@@ -529,22 +547,24 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
         'prior_treatment': pd.Series.mode,
         'nivo_maintenance': pd.Series.mode
     }).reset_index()
-    
+
     # Fix the pd.Series.mode NaN bug
     for f in ['sex', 'NRAS_MUTATION', 'BRAF_MUTATION']:
         blood[f] = blood[f].apply(lambda val: np.nan if type(val) != str else val)
-    
+        
+    # Fix for duplicates when summing therapy type lists
+    blood.immuno_therapy_type = blood.immuno_therapy_type.apply(set).apply(list)
+
     progression.set_index('gpcr_id', inplace=True)
-    labels = progression[progression.study_name == 'post-01'].loc[potential_patients].pseudorecist
+    labels = progression[progression.study_name == 'post-02'].loc[potential_patients].pseudorecist
 
     if verbose > 0:
         print(f'The intersection of datasets showed {len(potential_patients)} potential datapoints.')
-    
+
     # Prepare for return
-    lesions.drop(columns='study_name', inplace=True)
-    lesions.set_index('gpcr_id', inplace=True)
-    patients = patients.merge(blood, on='gpcr_id', how='inner')
-    patients.set_index('gpcr_id', inplace=True)
+    lesions.set_index(['gpcr_id', 'study_name'], inplace=True)
+    patients = blood.merge(patients, on='gpcr_id', how='inner')
+    patients.set_index(['gpcr_id', 'study_name'], inplace=True)
 
     return labels, lesions, patients
 
