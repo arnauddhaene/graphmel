@@ -4,6 +4,8 @@ from typing import List, Tuple
 from collections.abc import Callable
 
 import pickle
+import string
+import re
 
 import datetime as dt
 
@@ -31,7 +33,7 @@ CHECKPOINTS_DIR = os.path.join(DATA_DIR, 'checkpoints/')
 
 # CONNECTION_DIR = '/Volumes/lts4-immuno/'
 CONNECTION_DIR = '/Users/adhaene/Downloads/'
-DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04', 'data_2021-10-12', 'data_2021-11-06']
+DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04', 'data_2021-10-12', 'data_2021-11-06', 'data_2021-11-18']
 
 FILES = {
     'data_2021-09-20': dict(
@@ -52,7 +54,14 @@ FILES = {
     'data_2021-11-06': dict(
         radiomics='melanoma_lesions-radiomics.csv',
         distances='post-01-wasserstein-distances.csv'
-    )
+    ),
+    'data_2021-11-18': dict(
+        pet='melanoma_lesion-info_radiomics-pet_2021-11-18_anonymized.csv',
+        shape='melanoma_lesion-info_radiomics-pet_shape_firstorder_2021-11-18_anonymized.csv',
+        lesions='melanoma_lesion-info_organ-overlap_2021-11-18_cleaned_all_anonymized.csv',
+        progression='melanoma_petct-exams_progression-status_2021-11-18_anonymized.csv',
+        blood='melanoma_info_patient-treatment-blood-mutation_2021-11-18_anonymized.csv'
+    ),
 }
 
 
@@ -157,9 +166,9 @@ def create_dataset(
         dataset
     """
     
-    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
+    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[4], FILES[DATA_FOLDERS[4]]['lesions']))
     # Filter out benign lesions and non-post-1 studies
-    lesions = lesions[(lesions.pars_classification_petct != 'benign') & (lesions.study_name == 'post-01')]
+    lesions = lesions[(lesions.pars_suspicious_prob_petct > 0.75) & (lesions.study_name == 'post-01')]
     radiomics = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
                                          FILES[DATA_FOLDERS[3]]['radiomics']))
     radiomics['study_name'] = radiomics.study_name.apply(lambda sn: '-'.join(sn[1:].split('_')))
@@ -410,25 +419,29 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
             
     """
     # LESIONS
-    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['lesions']))
+    # Fetch
+    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[4], FILES[DATA_FOLDERS[4]]['lesions']))
+    shape = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[4], FILES[DATA_FOLDERS[4]]['shape']),
+                        index_col=0)
+    shape = standardise_column_names(shape)
+    # Merge with radiomics
+    lesions = lesions.merge(shape, on=['gpcr_id', 'study_name', 'roi_id'], how='inner')
     # Filter out benign lesions and non-post-1 studies
-    lesions = lesions[(lesions.pars_classification_petct != 'benign') & (lesions.study_name == 'post-01')]
+    lesions = lesions[(lesions.pars_suspicious_prob_petct > 0.75) & (lesions.study_name == 'post-01')]
     # Filter out single-lesion studies
     multiple_lesions = lesions.groupby('gpcr_id').size().gt(1)
     multiple_lesions = multiple_lesions.index[multiple_lesions.values]
     lesions = lesions[lesions.gpcr_id.isin(multiple_lesions)]
-    # RADIOMICS
-    radiomics = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
-                                         FILES[DATA_FOLDERS[3]]['radiomics']))
-    radiomics['study_name'] = radiomics.study_name.apply(lambda sn: '-'.join(sn[1:].split('_')))
-    radiomics_features = ['vol_ccm', 'max_suv_val', 'mean_suv_val', 'min_suv_val', 'sd_suv_val']
-    lesions.drop(columns=radiomics_features, inplace=True)
-    lesions = lesions.merge(radiomics, on=['gpcr_id', 'study_name', 'lesion_label_id'], how='inner')
-    # Remove volume and add voxels
-    # (as they are highly correlated and voxels is more consistent with new values)
-    radiomics_features.append('voxels')
-    radiomics_features.remove('vol_ccm')
+
     # Keep only radiomics features and assigned organ
+    radiomics_features = [
+        'original_shape_elongation', 'original_shape_flatness', 'original_shape_leastaxislength',
+        'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
+        'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
+        'original_shape_maximum3ddiameter', 'original_shape_meshvolume', 'original_shape_minoraxislength',
+        'original_shape_sphericity', 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
+        'original_shape_voxelvolume', 'mtv', 'tlg']
+
     lesions = lesions[['gpcr_id', 'study_name', *radiomics_features, 'assigned_organ']]
 
     if verbose > 0:
@@ -451,11 +464,12 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
         
     # PATIENT-LEVEL
     patients = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['patients']))
+    studies = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[0], FILES[DATA_FOLDERS[0]]['studies']))
     # Fix encoding for 90+ patients
     patients['age_at_treatment_start_in_years'] = \
         patients.age_at_treatment_start_in_years.apply(lambda a: 90 if a == '90 or older' else int(a))
 
-    blood = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1], FILES[DATA_FOLDERS[1]]['blood']))
+    blood = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[4], FILES[DATA_FOLDERS[4]]['blood']))
     blood.rename(columns={feature: feature.replace('-', '_') for feature in blood.columns}, inplace=True)
     # Listify immunotherapy type to create multi-feature encoding
     blood['immuno_therapy_type'] = blood.immuno_therapy_type \
@@ -475,9 +489,51 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
             blood[feature] = blood[feature].astype(bool)
 
     patients = patients[['gpcr_id', *patient_features]]
-    blood = blood[['gpcr_id', *blood_features]]
+    blood = blood[['gpcr_id', 'n_days_to_treatment_start', *blood_features]]
+    blood['study_name'] = 'blood'
     
-    potential_patients = list(set(lesions.gpcr_id) & set(patients.gpcr_id))
+    blood_filtered = pd.DataFrame()
+    
+    radiomics = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
+                                         FILES[DATA_FOLDERS[3]]['radiomics']))
+    
+    potential_patients = list(set(lesions.gpcr_id) & set(patients.gpcr_id) & set(radiomics.gpcr_id) \
+                              & set(blood.gpcr_id) & set(studies[studies.study_name == 'post-01'].gpcr_id))
+    
+    for patient in potential_patients:
+        
+        mapper = retrieve_mapper(pd.concat([blood, studies]), patient,
+                                 'study_name', 'n_days_to_treatment_start').reset_index(drop=True)
+
+        # Get the `n_days_to_treatment_start` of blood results to aggregate
+        wanted_blood_results_idx = get_closest_blood_results(mapper).n_days_to_treatment_start.to_list()
+        bdf = blood[(blood.gpcr_id == patient) \
+                    & (blood.n_days_to_treatment_start.isin(wanted_blood_results_idx))]
+        
+        blood_filtered = pd.concat([blood_filtered, bdf])
+        
+    blood = blood_filtered.groupby('gpcr_id').agg({
+        'bmi': np.mean,
+        'performance_score_ecog': np.mean,
+        'ldh_sang_ul': np.mean,
+        'neutro_absolus_gl': np.mean,
+        'eosini_absolus_gl': np.mean,
+        'leucocytes_sang_gl': np.mean,
+        'immuno_therapy_type': np.sum,
+        'lympho_absolus_gl': np.mean,
+        'sex': pd.Series.mode,
+        'NRAS_MUTATION': pd.Series.mode,
+        'BRAF_MUTATION': pd.Series.mode,
+        'concomittant_tvec': pd.Series.mode,
+        'prior_targeted_therapy': pd.Series.mode,
+        'prior_treatment': pd.Series.mode,
+        'nivo_maintenance': pd.Series.mode
+    }).reset_index()
+    
+    # Fix the pd.Series.mode NaN bug
+    for f in ['sex', 'NRAS_MUTATION', 'BRAF_MUTATION']:
+        blood[f] = blood[f].apply(lambda val: np.nan if type(val) != str else val)
+    
     progression.set_index('gpcr_id', inplace=True)
     labels = progression[progression.study_name == 'post-01'].loc[potential_patients].pseudorecist
 
@@ -491,6 +547,19 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     patients.set_index('gpcr_id', inplace=True)
 
     return labels, lesions, patients
+
+
+def retrieve_mapper(df: pd.DataFrame, patient: int, index: str, values: str):
+    return df[df.gpcr_id == patient][[index, values]].sort_values(by=values)
+
+
+def get_closest_blood_results(mapper: pd.DataFrame, study: str = 'post-01'):
+    # Fetch index of wanted study
+    p1i = mapper[mapper.study_name == study].index.to_numpy()[0]
+    # Get intersection of closest before and after and check that they exist
+    closest_idx = list(set((p1i - 1, p1i + 1)) & set(mapper[mapper.study_name == 'blood'].index))
+    # Return closest before and after blood results
+    return mapper[mapper.study_name.isin([study, 'blood'])].loc[closest_idx]
 
 
 def classify_response(row):
@@ -534,3 +603,48 @@ def format_number_header(heading: str, spotlight: str, footer: str) -> str:
             <div class="number-footer"> {footer} </div>
         </div>
     """
+
+
+def standardise_column_names(df, remove_punct=True):
+    """ Converts all DataFrame column names to lower case replacing
+    whitespace of any length with a single underscore. Can also strip
+    all punctuation from column names.
+    
+    Taken from: https://gist.github.com/georgerichardson/db66b686b4369de9e7196a65df45fc37
+    
+    Parameters
+    ----------
+    df: pandas.DataFrame
+        DataFrame with non-standardised column names.
+    remove_punct: bool (default True)
+        If True will remove all punctuation from column names.
+    
+    Returns
+    -------
+    df: pandas.DataFrame
+        DataFrame with standardised column names.
+    Example
+    -------
+    >>> df = pd.DataFrame({'Column With Spaces': [1,2,3,4,5],
+                           'Column-With-Hyphens&Others/': [6,7,8,9,10],
+                           'Too    Many Spaces': [11,12,13,14,15],
+                           })
+    >>> df = standardise_column_names(df)
+    >>> print(df.columns)
+    Index(['column_with_spaces',
+           'column_with_hyphens_others',
+           'too_many_spaces'], dtype='object')
+    """
+    
+    translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
+
+    for c in df.columns:
+        c_mod = c.lower()
+        if remove_punct:
+            c_mod = c_mod.translate(translator)
+        c_mod = '_'.join(c_mod.split(' '))
+        if c_mod[-1] == '_':
+            c_mod = c_mod[:-1]
+        c_mod = re.sub(r'\_+', '_', c_mod)
+        df.rename({c: c_mod}, inplace=True, axis=1)
+    return df

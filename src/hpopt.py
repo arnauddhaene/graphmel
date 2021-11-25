@@ -39,7 +39,7 @@ def tune_hyperparams(ctx: click.Context, model, connectivity, epochs,
             lr=tune.grid_search([1e-1, 1e-2, 1e-3, 1e-4]),
             decay=tune.grid_search([1e-1, 1e-2, 1e-3]),
             hidden_dim=tune.choice([16, 32, 64, 128]),
-            batch_size=tune.choice([1, 2, 4, 8, 16])
+            batch_size=tune.choice([4, 8, 16])
         ))
     
     result = analysis.get_best_config(metric='objective', mode='max')
