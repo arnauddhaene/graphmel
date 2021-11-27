@@ -9,8 +9,6 @@ import re
 
 import datetime as dt
 
-from itertools import permutations
-
 import pandas as pd
 import numpy as np
 
@@ -24,7 +22,6 @@ from sklearn.base import BaseEstimator
 
 import torch
 from torch_geometric.data import Data
-from torch_geometric.transforms import ToDense
 
 BASE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir)
 DATA_DIR = os.path.join(BASE_DIR, 'data/')
@@ -33,7 +30,8 @@ CHECKPOINTS_DIR = os.path.join(DATA_DIR, 'checkpoints/')
 
 # CONNECTION_DIR = '/Volumes/lts4-immuno/'
 CONNECTION_DIR = '/Users/adhaene/Downloads/'
-DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04', 'data_2021-10-12', 'data_2021-11-06', 'data_2021-11-18']
+DATA_FOLDERS = ['data_2021-09-20', 'data_2021-10-04', 'data_2021-10-12', 'data_2021-11-06', 'data_2021-11-18',
+                'data_2021-11-26']
 
 FILES = {
     'data_2021-09-20': dict(
@@ -62,6 +60,9 @@ FILES = {
         progression='melanoma_petct-exams_progression-status_2021-11-18_anonymized.csv',
         blood='melanoma_info_patient-treatment-blood-mutation_2021-11-18_anonymized.csv'
     ),
+    'data_2021-11-26': dict(
+        distances='pre-post-01-wasserstein-distances.csv'
+    )
 }
 
 
@@ -124,12 +125,12 @@ def load_dataset(
             preprocess(labels, lesions, patients,
                        test_size=test_size, seed=seed, verbose=verbose)
             
-        dataset_train = create_dataset(X=X_train, Y=y_train, dense=dense, distance=distance,
+        dataset_train = create_dataset(X=X_train, Y=y_train, distance=distance,
                                        connectivity=connectivity, verbose=verbose)
         
         # In the test loader we set the batch size to be
         # equal to the size of the whole test set
-        dataset_test = create_dataset(X=X_test, Y=y_test, dense=dense, distance=distance,
+        dataset_test = create_dataset(X=X_test, Y=y_test, distance=distance,
                                       connectivity=connectivity, verbose=verbose)
     
         fpath = os.path.join(CHECKPOINTS_DIR,
@@ -145,15 +146,14 @@ def load_dataset(
 
 
 def create_dataset(
-    X: pd.DataFrame, Y: pd.Series, dense: bool = False, connectivity: str = 'wasserstein',
-    distance: float = 0.5, verbose: int = 0
+    X: pd.DataFrame, Y: pd.Series, connectivity: str = 'wasserstein',
+    distance: float = 2.5, verbose: int = 0
 ) -> List[Data]:
     """Packages preprocessed data and its labels into a dataset
 
     Args:
         X (pd.DataFrame): `gpcr_id` indexed datapoints (lesions)
         Y (pd.Series): `gpcr_id` indexed labels. 1 is NPD.
-        dense (bool, optional): create dense Graph representations
         connectivity (str, optional): node connectivity method. Defaults to 'wasserstein'.
         distance (float, optional): if `wasserstein` connectivity is chosen,
             the threshold distance in order to create an edge between nodes. Defaults to 0.5.
@@ -166,25 +166,18 @@ def create_dataset(
         dataset
     """
     
-    lesions = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[4], FILES[DATA_FOLDERS[4]]['lesions']))
-    # Filter out benign lesions and non-post-1 studies
-    lesions = lesions[(lesions.pars_suspicious_prob_petct > 0.75) & (lesions.study_name == 'post-01')]
-    radiomics = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
-                                         FILES[DATA_FOLDERS[3]]['radiomics']))
-    radiomics['study_name'] = radiomics.study_name.apply(lambda sn: '-'.join(sn[1:].split('_')))
-    radiomics_features = ['vol_ccm', 'max_suv_val', 'mean_suv_val', 'min_suv_val', 'sd_suv_val']
-    lesions.drop(columns=radiomics_features, inplace=True)
-    lesions = lesions.merge(radiomics, on=['gpcr_id', 'study_name', 'lesion_label_id'], how='inner')
+    X.reset_index(inplace=True)
     
-    distances = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
-                                         FILES[DATA_FOLDERS[3]]['distances']))
-    
+    distances = pd.read_csv(
+        os.path.join(CONNECTION_DIR, DATA_FOLDERS[5], FILES[DATA_FOLDERS[5]]['distances']))
+    distances.study_name = distances.study_name.apply(lambda sn: '-'.join(sn.split('_')))
+
     # Get rid of invalid distances
-    valid_lesions_per_patient = lesions.groupby('gpcr_id').lesion_label_id.unique().to_dict()
+    valid_lesions_per_patient = X.groupby(['gpcr_id', 'study_name']).lesion_label_id.unique().to_dict()
     
     def is_valid_distance(row):
-    
-        valid_lesions = valid_lesions_per_patient.get(int(row.gpcr_id))
+
+        valid_lesions = valid_lesions_per_patient.get((int(row.gpcr_id), row.study_name))
         
         if valid_lesions is None:
             return False
@@ -192,83 +185,99 @@ def create_dataset(
         intersection = set(valid_lesions) & set([row.lesion_i, row.lesion_j])
         
         return len(intersection) == 2
-    
+
     distances['valid'] = distances.apply(is_valid_distance, axis=1)
     distances = distances[distances.valid]
     
-    dataset = []
+    node_columns = ['original_shape_flatness', 'original_shape_leastaxislength',
+                    'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
+                    'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
+                    'original_shape_maximum3ddiameter', 'original_shape_meshvolume',
+                    'original_shape_minoraxislength', 'original_shape_sphericity',
+                    'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
+                    'original_shape_voxelvolume', 'mtv', 'tlg', 'bones_abdomen',
+                    'bones_lowerlimb', 'bones_thorax', 'kidney', 'liver', 'lung',
+                    'lymphnode_abdomen', 'lymphnode_lowerlimb', 'lymphnode_thorax',
+                    'other_abdomen', 'other_lowerlimb', 'other_thorax', 'spleen']
+    patient_columns = ['age_at_treatment_start_in_years', 'x0_male']
     
-    if dense:
-        max_num_nodes = lesions.groupby('gpcr_id').size().max()
-        to_dense = ToDense(max_num_nodes)
+    study_columns = [str(feat) for feat in list(X.columns) \
+                     if (feat not in node_columns \
+                         and feat not in patient_columns \
+                         and feat not in ['gpcr_id', 'study_name', 'lesion_label_id'])]
 
-    for patient in list(X.index.unique()):
+    dataset = []
 
-        # Create patient sub-DataFrame of all his post-1 study lesions
-        pdf = lesions[lesions.gpcr_id == patient].reset_index()
-        
-        # Sanity check
-        assert pdf.shape[0] == X[X.index == patient].shape[0], f'Unequal lesion count for patient {patient}'
-        
-        num_nodes = pdf.shape[0]
-        edge_index = []
-        
-        # Connect lesions using different methodologies
-        if connectivity == 'organ':
-            # Connect all lesions that are assigned to the same organ
-            for i in range(num_nodes):
-                source = pdf.loc[i].assigned_organ
-                targets = list(pdf[pdf.assigned_organ == source].index)
+    for patient in list(X.gpcr_id.unique()):
 
-                edge_index.extend([[i, j] for j in targets if i != j])
-                
-        elif connectivity == 'fully':
-            # Create a fully-connected network representation
-            edge_index = list(permutations(range(num_nodes), 2, ))
+        pdf = X[X.gpcr_id == patient]
+
+        edge_index, edge_weight, split_sizes, graph_sizes, order = \
+            np.array([]).reshape(0, 2), np.array([]), [], [], []
+
+        # Iterate over studies
+        for study in pdf.study_name.unique():
+
+            study_edge_index = []
             
-        elif connectivity == 'wasserstein':
-            wanted_edges = distances[(distances.gpcr_id == patient) \
+            psdf = pdf[pdf.study_name == study].rename_axis('order').reset_index()
+            
+            # Fetch order to make sure final extracted features are attributed to correct node
+            order.extend(psdf['order'])
+
+            num_nodes = psdf.shape[0]
+            graph_sizes.append(num_nodes)
+
+            wanted_edges = distances[(distances.gpcr_id == patient) & (distances.study_name == study) \
                                      & (distances.wasserstein_distance < distance)]
-            edge_index = wanted_edges[['lesion_i', 'lesion_j']].to_numpy().astype(int)
+
+            study_edge_index = wanted_edges[['lesion_i', 'lesion_j']].to_numpy().astype(int)
             
             # Replace lesion_label_id by index from preprocessed data
             # Inspired from Method #3 of:
             # https://stackoverflow.com/questions/55949809/efficiently-replace-elements-in-array-based-on-dictionary-numpy-python
-            keys, values = pdf.lesion_label_id, pdf.index
+            keys, values = psdf.lesion_label_id, psdf.index
             mapping = np.zeros(keys.max() + 1, dtype=values.dtype)
             mapping[keys] = values
-            edge_index = mapping[edge_index]
+            study_edge_index = mapping[study_edge_index]
             
-            # Add edges in both directions
-            edge_index = np.concatenate([edge_index, np.flip(edge_index, axis=1)])
-            
+            split_sizes.append(study_edge_index.shape[0] * 2)
+
             # Add edge weight
-            edge_weight = wanted_edges.wasserstein_distance.to_numpy().astype(float)
-            edge_weight = np.concatenate([edge_weight, edge_weight])
-                
-        else:
-            raise ValueError(f'Connectivity value not accepted: {connectivity}.'
-                             "Must be either 'fully', 'wasserstein', or 'organ'.")
+            study_edge_weight = wanted_edges.wasserstein_distance.to_numpy().astype(float)
+            edge_weight = np.concatenate([edge_weight, study_edge_weight, study_edge_weight])
+
+            # Add edges in both directions
+            edge_index = np.concatenate([edge_index, study_edge_index, np.flip(study_edge_index, axis=1)])
+
+            # Skip graph if there are no edges
+            if edge_index.shape[1] == 0:
+                continue
 
         edge_index = torch.tensor(edge_index).t().long()
-    
-        # Skip graph if there are no edges
-        if edge_index.shape[1] == 0:
-            continue
-        
-        all_x = X.loc[patient].reset_index(drop=True).to_numpy().astype(np.float32)
-        
-        x = torch.tensor(all_x[:, :18])
-        y = torch.tensor(Y.loc[patient])
-        graph_features = torch.tensor(all_x[0, 18:])
         edge_weight = torch.tensor(edge_weight).float()
+        # Can be used with {edge_index, edge_weight}.split(tuple(split_sizes)) to separate edges
+        split_sizes = torch.tensor(split_sizes).long()
+        # Can be used with x.split(tuple(graph_sizes)) to separate node features
+        graph_sizes = torch.tensor(graph_sizes).long()
         
-        extra_kwargs = dict() if dense else dict(edge_weight=edge_weight)
+        x = torch.tensor(pdf.loc[order][node_columns].to_numpy().astype(np.float32))
+        # Use unique to fetch only one row per study
+        study_features = torch.tensor(pdf.loc[order][study_columns].to_numpy()).unique(dim=0)
         
-        data = Data(x=x, graph_features=graph_features, edge_index=edge_index,
-                    num_nodes=num_nodes, y=y.reshape(-1), **extra_kwargs)
+        if study_features.shape[0] < graph_sizes.shape[0]:
+            study_features = study_features.repeat(graph_sizes.shape[0], 1)
+        
+        # Select only the first row as they are identical for both studies
+        patient_features = torch.tensor(pdf.loc[order][patient_columns].to_numpy()[0, :])
 
-        dataset.append(to_dense(data) if dense else data)
+        y = torch.tensor(Y.loc[patient])
+
+        data = Data(x=x, study_features=study_features, patient_features=patient_features,
+                    edge_index=edge_index, graph_sizes=graph_sizes, split_sizes=split_sizes,
+                    y=y.reshape(-1), edge_weight=edge_weight, num_nodes=x.shape[0])
+        
+        dataset.append(data)
         
     return dataset
 
@@ -434,7 +443,7 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     lesions = lesions.merge(shape, on=['gpcr_id', 'study_name', 'roi_id'], how='inner')
 
     # Filter out benign lesions and non-post-1 studies
-    lesions = lesions[(lesions.pars_suspicious_prob_petct > 0.75) \
+    lesions = lesions[(lesions.pars_suspicious_prob_petct > 0.0) \
                       & (lesions.study_name.isin(['pre-01', 'post-01']))]
 
     # Filter out single-lesion studies
@@ -449,9 +458,9 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
         'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
         'original_shape_maximum3ddiameter', 'original_shape_meshvolume', 'original_shape_minoraxislength',
         'original_shape_sphericity', 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
-        'original_shape_voxelvolume', 'mtv', 'tlg']
+        'original_shape_voxelvolume', 'mtv', 'tlg', 'pars_suspicious_prob_petct']
 
-    lesions = lesions[['gpcr_id', 'study_name', *radiomics_features, 'assigned_organ']]
+    lesions = lesions[['gpcr_id', 'study_name', 'lesion_label_id', *radiomics_features, 'assigned_organ']]
 
     if verbose > 0:
         print(f"Post-1 study lesions extracted for {len(lesions.gpcr_id.unique())} patients")
@@ -463,13 +472,13 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
 
     # We need to filter out studies who do not have an associated progression label
     # Add label from progression DataFrame
-    lesions = lesions.merge(progression[progression.study_name == 'post-02'][['gpcr_id', 'pseudorecist']],
+    lesions = lesions.merge(progression[progression.study_name == 'post-01'][['gpcr_id', 'pseudorecist']],
                             on=['gpcr_id'], how='inner')
     lesions = lesions[lesions.pseudorecist.notna()]
     lesions.drop(columns='pseudorecist', inplace=True)
 
     if verbose > 0:
-        print(f"Post-1 study labels added for {len(lesions.gpcr_id.unique())} patients")
+        print(f"Post-2 study labels added for {len(lesions.gpcr_id.unique())} patients")
         
     # PATIENT-LEVEL
     patients = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[2], FILES[DATA_FOLDERS[2]]['patients']))
@@ -556,13 +565,13 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     blood.immuno_therapy_type = blood.immuno_therapy_type.apply(set).apply(list)
 
     progression.set_index('gpcr_id', inplace=True)
-    labels = progression[progression.study_name == 'post-02'].loc[potential_patients].pseudorecist
+    labels = progression[progression.study_name == 'post-01'].loc[potential_patients].pseudorecist
 
     if verbose > 0:
         print(f'The intersection of datasets showed {len(potential_patients)} potential datapoints.')
 
     # Prepare for return
-    lesions.set_index(['gpcr_id', 'study_name'], inplace=True)
+    lesions.set_index(['gpcr_id', 'study_name', 'lesion_label_id'], inplace=True)
     patients = blood.merge(patients, on='gpcr_id', how='inner')
     patients.set_index(['gpcr_id', 'study_name'], inplace=True)
 

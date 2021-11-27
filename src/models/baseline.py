@@ -1,4 +1,5 @@
 import torch
+# from torch import nn
 import torch.nn.functional as F
 from torch.nn import Linear, LogSoftmax, ModuleList, Sequential, BatchNorm1d, ReLU
 
@@ -9,23 +10,17 @@ from models.custom import SparseModule
 
 
 class BaselineGNN(SparseModule):
-    def __init__(
-        self,
-        num_classes: int,
-        hidden_dim: int,
-        node_features_dim: int,
-        graph_features_dim: int,
-        layer_type: str = 'GraphConv',
-        num_layers: int = 10,
-    ):
+    def __init__(self, lesion_features_dim: int, hidden_dim: int,
+                 layer_type: str = 'GraphConv', num_layers: int = 10):
         super(BaselineGNN, self).__init__()
+        
         self.layer_type = layer_type
         self.num_layers = num_layers
         
         self.convs = ModuleList()
 
         feature_extractor = \
-            self.create_layer(in_channels=node_features_dim, out_channels=hidden_dim)
+            self.create_layer(in_channels=lesion_features_dim, out_channels=hidden_dim)
 
         self.convs.append(feature_extractor)
         
@@ -34,16 +29,9 @@ class BaselineGNN(SparseModule):
                 self.create_layer(in_channels=hidden_dim, out_channels=hidden_dim)
             
             self.convs.append(layer)
-
-        self.fc1 = Linear(hidden_dim * 2 + graph_features_dim, hidden_dim)
-        self.fc2 = Linear(hidden_dim, num_classes)
-
-        self.readout = LogSoftmax(dim=-1)
-
-    def forward(self, data):
-        
-        x, edge_index, batch, graph_features, edge_weight = \
-            data.x, data.edge_index, data.batch, data.graph_features, data.edge_weight
+    
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor,
+                edge_weight: torch.Tensor = None) -> torch.Tensor:
 
         # Wasserstein edge weights are added if GraphConv layers are used
         if self.layer_type == 'GNN':
@@ -54,16 +42,8 @@ class BaselineGNN(SparseModule):
         for step in range(len(self.convs)):
             x = F.relu(self.convs[step](x, edge_index, **conv_kwargs))
         
-        # Concatenate pooling from graph embeddings with graph features
-        x = torch.cat(
-            [gmp(x, batch), gap(x, batch), graph_features.reshape(batch.unique().size(0), -1)], dim=1)
+        return x
         
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.fc2(x)
-        
-        return self.readout(x)
-    
     def create_layer(self, **kwargs):
         """Create layer based on type
 
@@ -88,7 +68,61 @@ class BaselineGNN(SparseModule):
                 Linear(dim, dim), ReLU()))
         else:
             raise ValueError(f'{self.layer_type} is not a valid layer type')
+        
+
+class TimeGNN(SparseModule):
+    def __init__(
+        self,
+        num_classes: int,
+        hidden_dim: int,
+        lesion_features_dim: int,
+        study_features_dim: int,
+        patient_features_dim: int,
+        layer_type: str = 'GraphConv',
+        num_layers: int = 10,
+    ):
+        super(TimeGNN, self).__init__()
+        
+        self.layer_type = layer_type
+        self.num_layers = num_layers
+        
+        self.gnn = BaselineGNN(lesion_features_dim=lesion_features_dim, hidden_dim=hidden_dim,
+                               layer_type=layer_type, num_layers=num_layers)
+        
+        # self.conv = nn.Conv1d(in_channels=(hidden_dim * 2 + study_features_dim), out_channels=hidden_dim,
+        #                       kernel_size=4, padding=1).to(dtype=torch.float64)
+
+        self.fc1 = Linear(hidden_dim * 2 + study_features_dim + patient_features_dim, hidden_dim) \
+            .to(dtype=torch.float64)
+        self.fc2 = Linear(hidden_dim, num_classes).to(dtype=torch.float64)
+
+        self.readout = LogSoftmax(dim=-1).to(dtype=torch.float64)
+
+    def forward(self, data):
+        
+        study_features, patient_features = data.study_features, data.patient_features
+        
+        xes = list(data.x.split(tuple(data.graph_sizes)))
+        edge_indices = list(data.edge_index.split(tuple(data.split_sizes), dim=1))
+        batches = list(data.batch.split(tuple(data.graph_sizes)))
+        
+        study_embeddings = []
+        
+        for i, (x, edge_index, batch) in enumerate(zip(xes, edge_indices, batches)):
+            study_embeddings.append(torch.cat([
+                gmp(self.gnn(x, edge_index), batch), gap(self.gnn(x, edge_index), batch),
+                study_features[i, :].reshape(1, -1)], dim=1).t())
+        
+        study_pooled = torch.cat(study_embeddings, dim=1).reshape(-1, len(xes)).mean(dim=1)
+        
+        patient_pooled = torch.cat([study_pooled.flatten(), patient_features], dim=0)
+        
+        patient_pooled = F.relu(self.fc1(patient_pooled)).to(dtype=torch.float64)
+        patient_pooled = F.dropout(patient_pooled, p=0.5, training=self.training).to(dtype=torch.float64)
+        patient_pooled = self.fc2(patient_pooled)
+        
+        return self.readout(patient_pooled).reshape(1, -1)
     
     def __str__(self) -> str:
         """Representation"""
-        return f'Baseline GNN with {self.num_layers} {self.layer_type} layers'
+        return f'TimeGNN with {self.num_layers} {self.layer_type} layers'

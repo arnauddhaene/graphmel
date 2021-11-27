@@ -9,8 +9,7 @@ from torch_geometric.loader import DataLoader, DenseDataLoader
 import mlflow
 
 from metrics import TrainingMetrics, TestingMetrics
-from models.baseline import BaselineGNN
-from models.diffpool import DiffPool
+from models.baseline import TimeGNN
 from train import run_training
 from utils import load_dataset, ASSETS_DIR
 
@@ -77,20 +76,19 @@ def run(model, connectivity,
         
     model_args = dict(
         num_classes=2,
-        graph_features_dim=dataset_train[0].graph_features.shape[0],
-        hidden_dim=hidden_dim,
-        node_features_dim=dataset_train[0].x.shape[1])
+        hidden_dim=64,
+        lesion_features_dim=dataset_train[0].x.shape[1],
+        study_features_dim=dataset_train[0].study_features.shape[1],
+        patient_features_dim=dataset_train[0].patient_features.shape[0],
+        num_layers=10
+    )
     
     if model == 'GNN':
-        model = BaselineGNN(layer_type='GraphConv', **model_args).to(device)
+        model = TimeGNN(layer_type='GraphConv', **model_args).to(device)
     elif model == 'GAT':
-        model = BaselineGNN(layer_type='GAT', **model_args).to(device)
-    elif model == 'DiffPool':
-        # 9 is the median amount of nodes in each graph
-        # TODO: make this pooling approach more data-driven
-        model = DiffPool(**model_args, num_nodes=[9]).to(device)
+        model = TimeGNN(layer_type='GAT', **model_args).to(device)
     elif model == 'GIN':
-        model = BaselineGNN(layer_type='GIN', **model_args).to(device)
+        model = TimeGNN(layer_type='GIN', **model_args).to(device)
     else:
         raise ValueError(f'Could not instanciate {model} model')
         
@@ -119,7 +117,7 @@ def run(model, connectivity,
     torch.save(model.state_dict(), MODEL_PATH)
     # mlflow.log_artifact(MODEL_PATH)
     
-    loader_test_args = dict(dataset=dataset_test, batch_size=len(dataset_test))
+    loader_test_args = dict(dataset=dataset_test, batch_size=1)
     
     loader_test = DenseDataLoader(**loader_test_args) if model.is_dense() \
         else DataLoader(**loader_test_args)

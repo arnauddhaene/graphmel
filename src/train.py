@@ -17,18 +17,24 @@ def run_training(
     verbose: int = 0
 ):
     
-    if cv == 0:
-        # If k for KFold validation is 0, don't use a validation set
-        loader_train_args = dict(dataset=dataset_train, batch_size=batch_size)
+    if cv <= 1:
         
+        valid_split = round(len(dataset_train) * (1 if cv == 0 else .8))
+        
+        # If k for KFold validation is 0, don't use a validation set
+        loader_train_args = dict(dataset=dataset_train[:valid_split], batch_size=batch_size)
         loader_train = DenseDataLoader(**loader_train_args) if model.is_dense() \
             else DataLoader(**loader_train_args)
         
-        train(model, loader_train, None, metrics,
+        loader_valid_args = dict(dataset=dataset_train[valid_split:], batch_size=batch_size)
+        loader_valid = DenseDataLoader(**loader_valid_args) if model.is_dense() \
+            else DataLoader(**loader_valid_args)
+            
+        train(model, loader_train, loader_valid if cv == 1 else None, metrics,
               learning_rate=lr, weight_decay=decay, epochs=epochs, device=device,
               verbose=verbose)
-            
-    elif cv > 0:
+    
+    elif cv > 1:
         kfold = KFold(n_splits=cv, shuffle=True)
         
         # Create progress bar
