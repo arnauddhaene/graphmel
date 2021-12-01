@@ -4,37 +4,58 @@ from sklearn.model_selection import KFold
 
 import torch
 from torch import nn
-from torch_geometric.loader import DataLoader, DenseDataLoader
-from torch.utils.data import SubsetRandomSampler
+from torch_geometric.loader import DataLoader
+from torch.utils.data import SubsetRandomSampler, random_split
 
 from metrics import evaluate, TrainingMetrics
 
 
-def run_training(
-    model: nn.Module, dataset_train: DataLoader, metrics: TrainingMetrics, cv: int = 5,
-    lr: float = 1e-2, decay: float = 1e-3, batch_size: int = 4,
-    epochs: int = 25, device=None, dense: bool = None,
-    verbose: int = 0
+def run_ensembles(
+    models: nn.ModuleList, dataset_train: DataLoader, metrics: TrainingMetrics,
+    lr: float = 1e-2, decay: float = 1e-3, batch_size: int = 4, val_size: float = 0.0,
+    epochs: int = 25, device=None, verbose: int = 0
 ):
-    
-    if cv <= 1:
-        
-        valid_split = round(len(dataset_train) * (1 if cv == 0 else .8))
-        
-        # If k for KFold validation is 0, don't use a validation set
-        loader_train_args = dict(dataset=dataset_train[:valid_split], batch_size=batch_size)
-        loader_train = DenseDataLoader(**loader_train_args) if model.is_dense() \
-            else DataLoader(**loader_train_args)
-        
-        loader_valid_args = dict(dataset=dataset_train[valid_split:], batch_size=batch_size)
-        loader_valid = DenseDataLoader(**loader_valid_args) if model.is_dense() \
-            else DataLoader(**loader_valid_args)
             
-        train(model, loader_train, loader_valid if cv == 1 else None, metrics,
+    # Create progress bar
+    pbar = tqdm(enumerate(models), total=len(models), leave=False, disable=(verbose < 0))
+    
+    train_len = round(len(dataset_train) * (1 - val_size))
+    lengths = [train_len, len(dataset_train) - train_len]
+    
+    for ensemble, model in pbar:
+        if val_size > 0.:
+            I_train, I_valid = random_split(range(len(dataset_train)), lengths=lengths,
+                                            generator=torch.Generator().manual_seed(42 + ensemble))
+            
+            sampler_valid = SubsetRandomSampler(I_valid)
+            loader_valid_args = dict(dataset=dataset_train, batch_size=batch_size, sampler=sampler_valid)
+            loader_valid = DataLoader(**loader_valid_args)
+        else:
+            I_train, I_valid = range(len(dataset_train)), []
+            loader_valid = None
+            
+        if verbose > 0:
+            pbar.set_description(
+                f'Ensemble no. {ensemble} | Train size: {len(I_train)}, Valid size: {len(I_valid)}')
+        
+        metrics.set_run(ensemble)
+        
+        sampler_train = SubsetRandomSampler(I_train)
+        loader_train_args = dict(dataset=dataset_train, batch_size=batch_size, sampler=sampler_train)
+        loader_train = DataLoader(**loader_train_args)
+                
+        train(model, loader_train, loader_valid, metrics,
               learning_rate=lr, weight_decay=decay, epochs=epochs, device=device,
               verbose=verbose)
-    
-    elif cv > 1:
+
+
+def run_crossval(
+    model: nn.Module, dataset_train: DataLoader, metrics: TrainingMetrics, cv: int = 5,
+    lr: float = 1e-2, decay: float = 1e-3, batch_size: int = 1,
+    epochs: int = 25, device=None, verbose: int = 0
+):
+        
+    if cv > 1:
         kfold = KFold(n_splits=cv, shuffle=True)
         
         # Create progress bar
@@ -55,10 +76,8 @@ def run_training(
             loader_train_args = dict(dataset=dataset_train, batch_size=batch_size, sampler=sampler_train)
             loader_valid_args = dict(dataset=dataset_train, batch_size=batch_size, sampler=sampler_valid)
             
-            loader_train = DenseDataLoader(**loader_train_args) if model.is_dense() \
-                else DataLoader(**loader_train_args)
-            loader_valid = DenseDataLoader(**loader_valid_args) if model.is_dense() \
-                else DataLoader(**loader_valid_args)
+            loader_train = DataLoader(**loader_train_args)
+            loader_valid = DataLoader(**loader_valid_args)
                     
             train(model, loader_train, loader_valid, metrics,
                   learning_rate=lr, weight_decay=decay, epochs=epochs, device=device,
@@ -72,8 +91,7 @@ def train(
     model: nn.Module, loader_train: DataLoader, loader_valid: DataLoader,
     metrics: TrainingMetrics,
     learning_rate: float = 1e-2, weight_decay: float = 1e-3,
-    epochs: int = 25, device=None, dense: bool = None,
-    verbose: int = 0
+    epochs: int = 25, device=None, verbose: int = 0
 ) -> None:
     """
     Train model
@@ -86,9 +104,6 @@ def train(
         learning_rate (float, optional): learning rate. Defaults to 1e-2.
         weight_decay (float, optional): weight decay for Adam. Defaults to 1e-3.
         epochs (int, optional): number of epochs. Defaults to 25.
-        dense (bool), optional:
-            train model using dense representation, by default None.
-            if None, `model.is_dense()` is called
         verbose (int, optional): print info. Defaults to 0.
     """
     

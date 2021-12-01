@@ -137,20 +137,7 @@ dmypy.json
 .pyre/
 
 # data files
-Proj1/data/
-Proj1/results/
-Proj1-extended/data/
-Proj2/data/
-Proj1/src/data/
-Proj1-extended/src/data/
-Proj1-extended/results/
-Proj1-extended/figures/
-Proj2/src/data/
-Proj2/results/
-Proj2/figures/
-
-# figures
-Proj1/figures/
+assets/results/*
 
 # VSCode extensions
 .metals/

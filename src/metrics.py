@@ -119,13 +119,13 @@ class TrainingMetrics(Metrics):
         
         # return weighted objective of training and validation accuracy
         if 'Accuracy - validation' in objectives.keys() and 'Accuracy - training' in objectives.keys():
-            return .5 * objectives['Accuracy - training'] + .5 * objectives['Accuracy - validation']
+            return .25 * objectives['Accuracy - training'] + .75 * objectives['Accuracy - validation']
         elif 'Accuracy - training' in objectives.keys():
             return objectives['Accuracy - training']
         else:
             raise ValueError("Metrics don't allow for correct computation of objective")
 
-    def send_log(self):
+    def send_log(self, timestamp: dt.datetime):
     
         df = pd.DataFrame(self.storage)
         
@@ -138,6 +138,10 @@ class TrainingMetrics(Metrics):
         
         for _, feature in std.iterrows():
             mlflow.log_metric(feature.metric + ' - std', feature.value, feature.step)
+            
+        fpath = os.path.join(ASSETS_DIR, 'results/', f'TRAIN_METRICS_{timestamp}.csv')
+        df.to_csv(fpath)
+        mlflow.log_artifact(fpath)
 
 
 class TestingMetrics(Metrics):
@@ -147,9 +151,17 @@ class TestingMetrics(Metrics):
         super(TestingMetrics, self).__init__()
         self.epoch = epoch
     
-    def compute_metrics(self, model: nn.Module, loader: DataLoader):
-                
-        self.y_true, self.y_pred, _ = compute_predictions(model, loader)
+    def compute_metrics(self, models: nn.ModuleList, loader: DataLoader):
+        
+        predictions = []
+        
+        for model in models:
+            y_true, y_pred, _ = compute_predictions(model, loader)
+            predictions.append(y_pred.unsqueeze(dim=0))
+        
+        self.y_true = y_true
+        # Use majority voting of the model ensembles
+        self.y_pred = torch.cat(predictions, dim=0).sum(dim=0).div(len(models)).gt(.5).int()
         
         # Add testing accuracy
         self.storage.append(
@@ -173,9 +185,13 @@ class TestingMetrics(Metrics):
         for log in self.storage:
             metric, value = tuple(log.values())
             mlflow.log_metric(metric, value, step=self.epoch)
+
+        ppath = os.path.join(ASSETS_DIR, 'figures/', f'TEST_METRICS_{timestamp}.png')
+        self.plot(ppath)
+        mlflow.log_artifact(ppath)
         
-        fpath = os.path.join(ASSETS_DIR + 'figures/', f'TEST_METRICS_{timestamp}.png')
-        self.plot(fpath)
+        fpath = os.path.join(ASSETS_DIR, 'results/', f'TEST_METRICS_{timestamp}.csv')
+        pd.DataFrame(self.storage).to_csv(fpath)
         mlflow.log_artifact(fpath)
             
     def plot(self, fpath: str):

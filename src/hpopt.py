@@ -2,69 +2,79 @@ import os
 
 import click
 
+import torch
 from ray import tune
 
-from run import run
-from utils import BASE_DIR
+from utils import ASSETS_DIR, load_dataset
+from models.baseline import TimeGNN
+from metrics import TrainingMetrics
+from train import run_crossval
 
 
 @click.command()
-@click.option('--model', default='GAT',
-              type=click.Choice(['GNN', 'GAT', 'GIN', 'DiffPool'], case_sensitive=False),
-              help="Model architecture choice.")
-@click.option('--connectivity', default='wasserstein',
-              type=click.Choice(['fully', 'wasserstein'], case_sensitive=False),
-              help="Graph connectivity choice.")
-@click.option('--epochs', default=50,
-              help="Number of training epochs.")
-@click.option('--test-size', default=0.2,
-              help="Test set size in ratio.")
 @click.option('--seed', default=27,
               help="Random seed.")
 @click.option('--cv', default=5,
               help="Cross-validation splits.")
+@click.option('--suspicious', default=0.5,
+              help="Threshold of lesions suspicion for inclusion.")
+@click.option('--filename', default='hpopt-results-1',
+              help="Threshold of lesions suspicion for inclusion.")
 @click.option('--verbose', default=-1, type=int,
               help="Print out info for debugging purposes.")
-@click.pass_context
-def tune_hyperparams(ctx: click.Context, model, connectivity, epochs,
-                     test_size, seed, cv, verbose) -> None:
+def tune_hyperparams(seed, cv, suspicious, filename, verbose) -> None:
     
     analysis = tune.run(
         invoke_run,
         config=dict(
-            context=ctx, verbose=verbose,
-            model=model, connectivity=connectivity,
-            epochs=epochs,
-            test_size=test_size, seed=seed, cv=cv,
-            lr=tune.grid_search([1e-1, 1e-2, 1e-3, 1e-4]),
+            verbose=verbose, cv=cv, seed=seed, suspicious=suspicious,
+            epochs=tune.grid_search([50, 75, 100, 125]),
+            lr=tune.grid_search([1e-2, 1e-3, 1e-4]),
             decay=tune.grid_search([1e-1, 1e-2, 1e-3]),
-            hidden_dim=tune.choice([16, 32, 64, 128]),
-            batch_size=tune.choice([4, 8, 16])
+            hidden_dim=tune.choice([16, 32, 64]),
+            distance=tune.grid_search([5e-1, 1., 2., 5.]),
+            layers=tune.choice([5, 10, 15])
         ))
     
     result = analysis.get_best_config(metric='objective', mode='max')
     
     print(f"Best configuration: {result}")
     
-    with open(os.path.join(BASE_DIR, 'hpopt-results.csv'), 'a') as rfile:
-        rfile.write('\n' + ','.join(list(map(str, result.values()))[2:]))
+    analysis.dataframe().to_csv(os.path.join(ASSETS_DIR, 'results/', filename + '.json'))
 
     
 def invoke_run(config):
     
-    ctx, model, connectivity, epochs, test_size, seed, cv, verbose = \
-        config['context'], config['model'], config['connectivity'], config['epochs'], \
-        config['test_size'], config['seed'], config['cv'], config['verbose']
+    verbose, cv, seed, suspicious, epochs, distance, layers = \
+        config['verbose'], config['cv'], config['seed'], config['suspicious'], config['epochs'], \
+        config['distance'], config['layers']
     
     # Extract hyperparameters
-    lr, decay, hidden_dim, batch_size = \
-        config['lr'], config['decay'], config['hidden_dim'], config['batch_size']
+    lr, decay, hidden_dim = config['lr'], config['decay'], config['hidden_dim']
     
-    metric = ctx.invoke(run, model=model, connectivity=connectivity, epochs=epochs,
-                        lr=lr, decay=decay, hidden_dim=hidden_dim, batch_size=batch_size,
-                        test_size=test_size, seed=seed, cv=cv,
-                        experiment_name='Default', verbose=verbose)
+    batch_size = 1
+        
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dataset_train, _ = \
+        load_dataset(connectivity='wasserstein', seed=seed, test_size=0.,
+                     suspicious=suspicious, distance=distance, verbose=verbose)
+        
+    model_args = dict(
+        num_classes=2, hidden_dim=hidden_dim, num_layers=layers,
+        lesion_features_dim=dataset_train[0].x.shape[1],
+        study_features_dim=dataset_train[0].study_features.shape[1],
+        patient_features_dim=dataset_train[0].patient_features.shape[0])
+        
+    models = TimeGNN(layer_type='GAT', **model_args).to(device)
+        
+    metrics = TrainingMetrics()
     
+    run_crossval(models, dataset_train, metrics=metrics, cv=cv, \
+                 lr=lr, decay=decay, batch_size=batch_size, \
+                 epochs=epochs, device=device, verbose=verbose)
+        
+    metric = metrics.get_objective()
+
     tune.report(objective=metric)
 
 

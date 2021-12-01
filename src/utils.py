@@ -12,6 +12,9 @@ import datetime as dt
 import pandas as pd
 import numpy as np
 
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
@@ -81,7 +84,7 @@ def fetch_dataset_id(fname: str) -> Tuple[str, int, int, bool]:
 
 def load_dataset(
     connectivity: str = 'wasserstein', test_size: float = 0.2, seed: int = 27,
-    distance: float = 0.5, dense: bool = True, verbose: int = 0
+    distance: float = 0.5, suspicious: float = 0.5, dense: bool = False, verbose: int = 0
 ) -> Tuple[List[Data], List[Data]]:
     """
     Get training, validation, and testing DataLoaders.
@@ -101,7 +104,8 @@ def load_dataset(
             * loader_test (List[Data]): packaged testing dataset.
     """
     
-    identifier = (connectivity, round(test_size * 100), seed, dense)
+    identifier = (connectivity, round(test_size * 100), seed, dense, \
+                  round(distance * 100), round(suspicious * 100))
     
     files = os.listdir(CHECKPOINTS_DIR)
     stored_datasets = dict(zip(map(fetch_dataset_id, files), files))
@@ -119,7 +123,7 @@ def load_dataset(
         
     else:
 
-        labels, lesions, patients = fetch_data(verbose)
+        labels, lesions, patients = fetch_data(suspicious=suspicious, verbose=verbose)
         
         X_train, X_test, y_train, y_test = \
             preprocess(labels, lesions, patients,
@@ -127,14 +131,15 @@ def load_dataset(
             
         dataset_train = create_dataset(X=X_train, Y=y_train, distance=distance,
                                        connectivity=connectivity, verbose=verbose)
-        
-        # In the test loader we set the batch size to be
-        # equal to the size of the whole test set
-        dataset_test = create_dataset(X=X_test, Y=y_test, distance=distance,
-                                      connectivity=connectivity, verbose=verbose)
+        if test_size > 0.:
+            dataset_test = create_dataset(X=X_test, Y=y_test, distance=distance,
+                                          connectivity=connectivity, verbose=verbose)
+        else:
+            dataset_test = []
     
         fpath = os.path.join(CHECKPOINTS_DIR,
-                             f'{connectivity}_{round(test_size * 100)}_{seed}_{dense}_{dt.date.today()}.pt')
+                             f'{connectivity}_{round(test_size * 100)}_{seed}_{dense}_'
+                             f'{round(distance * 100)}_{round(suspicious * 100)}_{dt.date.today()}.pt')
         
         outfile = open(fpath, 'wb')
         pickle.dump((dataset_train, dataset_test), outfile)
@@ -357,9 +362,6 @@ def preprocess(
             * y_train (pd.Series): `gpcr_id` indexed training Series with progression labels. 1 is NPD.
             * y_test (pd.Series): `gpcr_id` indexed test Series with progression labels. 1 is NPD.
     """
-    
-    I_train, I_test, y_train, y_test = \
-        train_test_split(labels.index, labels, test_size=test_size, random_state=seed)
         
     lesions_pp = Preprocessor(
         pipe=ColumnTransformer(
@@ -397,32 +399,43 @@ def preprocess(
                                 + list(c.named_steps['preprocess'].transformers_[2][1] \
                                 .get_feature_names_out()))
     )
+    
+    if test_size == 0.:
+        I_train, y_train = labels.index, labels
+        I_test, y_test = [], None
+    else:
+        I_train, I_test, y_train, y_test = \
+            train_test_split(labels.index, labels, test_size=test_size, random_state=seed)
 
     lesions_pp.fit(lesions.loc[I_train])
-
     lesions_train = lesions_pp.transform(lesions.loc[I_train])
-    lesions_test = lesions_pp.transform(lesions.loc[I_test])
-    
-    patients_pp.fit(patients.loc[I_train])
 
+    patients_pp.fit(patients.loc[I_train])
     patients_train = patients_pp.transform(patients.loc[I_train])
-    patients_test = patients_pp.transform(patients.loc[I_test])
+
+    X_train = pd.merge(lesions_train, patients_train, left_index=True, right_index=True)
+    
+    if test_size > 0.:
+        lesions_test = lesions_pp.transform(lesions.loc[I_test])
+        patients_test = patients_pp.transform(patients.loc[I_test])
+    
+        X_test = pd.merge(lesions_test, patients_test, left_index=True, right_index=True)
+    else:
+        X_test = None
     
     # TODO: somehow avoid the merging of these two as the intermediate step means
     # we need to store more data (duplicating blood data over all lesions)
     # --> this would imply changing the way we create the dataset
     #     should totally be possible however
     
-    X_train = pd.merge(lesions_train, patients_train, left_index=True, right_index=True)
-    X_test = pd.merge(lesions_test, patients_test, left_index=True, right_index=True)
-    
     return X_train, X_test, y_train, y_test
 
 
-def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
     """Fetch data from sources explicited in __file__ constants. First filtering of raw data.
 
     Args:
+        suspicious (float): threshold of malignancy supsicion for addition into dataset
         verbose (int, optional): tuneable parameter for output verbosity. Defaults to 1.
 
     Returns:
@@ -443,7 +456,7 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     lesions = lesions.merge(shape, on=['gpcr_id', 'study_name', 'roi_id'], how='inner')
 
     # Filter out benign lesions and non-post-1 studies
-    lesions = lesions[(lesions.pars_suspicious_prob_petct > 0.0) \
+    lesions = lesions[(lesions.pars_suspicious_prob_petct > suspicious) \
                       & (lesions.study_name.isin(['pre-01', 'post-01']))]
 
     # Filter out single-lesion studies
@@ -472,7 +485,7 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
 
     # We need to filter out studies who do not have an associated progression label
     # Add label from progression DataFrame
-    lesions = lesions.merge(progression[progression.study_name == 'post-01'][['gpcr_id', 'pseudorecist']],
+    lesions = lesions.merge(progression[progression.study_name == 'post-02'][['gpcr_id', 'pseudorecist']],
                             on=['gpcr_id'], how='inner')
     lesions = lesions[lesions.pseudorecist.notna()]
     lesions.drop(columns='pseudorecist', inplace=True)
@@ -565,7 +578,7 @@ def fetch_data(verbose: int = 0) -> Tuple[pd.Series, pd.DataFrame, pd.DataFrame]
     blood.immuno_therapy_type = blood.immuno_therapy_type.apply(set).apply(list)
 
     progression.set_index('gpcr_id', inplace=True)
-    labels = progression[progression.study_name == 'post-01'].loc[potential_patients].pseudorecist
+    labels = progression[progression.study_name == 'post-02'].loc[potential_patients].pseudorecist
 
     if verbose > 0:
         print(f'The intersection of datasets showed {len(potential_patients)} potential datapoints.')
@@ -677,3 +690,25 @@ def standardise_column_names(df, remove_punct=True):
         c_mod = re.sub(r'\_+', '_', c_mod)
         df.rename({c: c_mod}, inplace=True, axis=1)
     return df
+
+
+def correlation_matrix(df: pd.DataFrame):
+    """
+    A function to calculate and plot
+    correlation matrix of a DataFrame.
+    """
+    # Create the matrix
+    matrix = df.corr()
+    
+    # Create cmap
+    cmap = sns.diverging_palette(250, 15, s=75, l=40,
+                                 n=9, center="light", as_cmap=True)
+    # Create a mask
+    mask = np.triu(np.ones_like(matrix, dtype=bool))
+    
+    # Make figsize bigger
+    fig, ax = plt.subplots(figsize=(16, 12))
+    
+    # Plot the matrix
+    _ = sns.heatmap(matrix, mask=mask, center=0, annot=True,
+                    fmt='.2f', square=True, cmap=cmap, ax=ax)
