@@ -28,7 +28,7 @@ def tune_hyperparams(seed, cv, suspicious, filename, verbose) -> None:
         invoke_run,
         config=dict(
             verbose=verbose, cv=cv, seed=seed, suspicious=suspicious,
-            epochs=tune.grid_search([50, 75, 100, 125]),
+            epochs=125,
             lr=tune.grid_search([1e-2, 1e-3, 1e-4]),
             decay=tune.grid_search([1e-1, 1e-2, 1e-3]),
             hidden_dim=tune.choice([16, 32, 64]),

@@ -161,7 +161,10 @@ class TestingMetrics(Metrics):
         
         self.y_true = y_true
         # Use majority voting of the model ensembles
-        self.y_pred = torch.cat(predictions, dim=0).sum(dim=0).div(len(models)).gt(.5).int()
+        if len(models) == 1:
+            self.y_pred = predictions[0]
+        else:
+            self.y_pred = torch.cat(predictions, dim=0).sum(dim=0).div(len(models)).gt(.5).int()
         
         # Add testing accuracy
         self.storage.append(

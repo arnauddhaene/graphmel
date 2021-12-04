@@ -366,8 +366,7 @@ def preprocess(
     lesions_pp = Preprocessor(
         pipe=ColumnTransformer(
             [('scaler', StandardScaler(), make_column_selector(dtype_include=np.number)),
-             ('one-hot', OneHotEncoder(),
-              make_column_selector(dtype_include=object))]),
+             ('one-hot', OneHotEncoder(), make_column_selector(dtype_include=object))]),
         feats_out_fn=lambda c: c.transformers_[0][-1] + list(c.transformers_[1][1].categories_[0])
     )
     
@@ -471,7 +470,8 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
         'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
         'original_shape_maximum3ddiameter', 'original_shape_meshvolume', 'original_shape_minoraxislength',
         'original_shape_sphericity', 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
-        'original_shape_voxelvolume', 'mtv', 'tlg', 'pars_suspicious_prob_petct']
+        'original_shape_voxelvolume', 'mtv', 'tlg', 'pars_suspicious_prob_petct',
+        'suv_skewness', 'suv_entropy', 'suv_kurtosis', 'suv_uniformity', 'suv_energy']
 
     lesions = lesions[['gpcr_id', 'study_name', 'lesion_label_id', *radiomics_features, 'assigned_organ']]
 

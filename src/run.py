@@ -45,12 +45,14 @@ from utils import load_dataset, ASSETS_DIR
               help="Wasserstein distance threshold for graph creation.")
 @click.option('--experiment-name', default='Default',
               help="Assign run to experiment.")
+@click.option('--run-name', default='',
+              help="MLflow run name.")
 @click.option('--verbose', default=1, type=int,
               help="Print out info for debugging purposes.")
 def run(model, connectivity,
         epochs, lr, decay, hidden_dim, layers,
         test_size, val_size, seed, ensembles, suspicious, distance,
-        experiment_name, verbose):
+        experiment_name, run_name, verbose):
     
     batch_size = 1
     
@@ -61,12 +63,13 @@ def run(model, connectivity,
         experiment = mlflow.get_experiment(experiment_id)
     
     timestamp = dt.datetime.today()
-    mlflow.start_run(experiment_id=experiment.experiment_id, run_name=model)
+    mlflow.start_run(experiment_id=experiment.experiment_id, run_name=(model if run_name == '' else run_name))
     
     mlflow.log_param('Ensembles', ensembles)
     mlflow.log_param('Suspicion threshold', suspicious)
     mlflow.log_param('Learning Rate', lr)
     mlflow.log_param('Weight Decay', decay)
+    mlflow.log_param('Message Passing Layers', layers)
     mlflow.log_param('Batch Size', batch_size)
     mlflow.log_param('Connectivity', connectivity)
     mlflow.log_param('Hidden dimensions', hidden_dim)

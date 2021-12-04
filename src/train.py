@@ -34,6 +34,8 @@ def run_ensembles(
             I_train, I_valid = range(len(dataset_train)), []
             loader_valid = None
             
+            model.reset()
+            
         if verbose > 0:
             pbar.set_description(
                 f'Ensemble no. {ensemble} | Train size: {len(I_train)}, Valid size: {len(I_valid)}')
@@ -124,16 +126,14 @@ def train(
         for data in loader_train:
             data.to(device)
             
-            output = model(data)
-            
-            loss = criterion(output, data.y.flatten())
-    
             optimizer.zero_grad()
+    
+            output = model(data)
+            loss = criterion(output, data.y.flatten())
+            loss.backward()
+            optimizer.step()
             
             epoch_loss += loss.item()
-            loss.backward()
-            
-            optimizer.step()
             
         with torch.no_grad():
             acc_train, _ = evaluate(model, loader_train)

@@ -15,7 +15,7 @@ class BaseModule(nn.Module):
         return sum(param.numel() for param in self.parameters())
     
     def reset(self) -> None:
-        """Reset weights to zero"""
+        """Reset weights"""
         for layer in self.children():
             if hasattr(layer, 'reset_parameters'):
                 layer.reset_parameters()
