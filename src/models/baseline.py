@@ -17,12 +17,12 @@ class BaselineGNN(SparseModule, WeightInitializableModule):
         
         self.layer_type = layer_type
         self.num_layers = num_layers
+        self.dropout = dropout
         
         self.convs = ModuleList()
 
         feature_extractor = \
-            self.create_layer(in_channels=lesion_features_dim, out_channels=hidden_dim,
-                              dropout=dropout)
+            self.create_layer(in_channels=lesion_features_dim, out_channels=hidden_dim)
 
         self.convs.append(feature_extractor)
         
@@ -38,7 +38,7 @@ class BaselineGNN(SparseModule, WeightInitializableModule):
                 edge_weight: torch.Tensor = None) -> torch.Tensor:
 
         # Wasserstein edge weights are added if GraphConv layers are used
-        if self.layer_type == 'GNN':
+        if self.layer_type == 'GraphConv':
             conv_kwargs = dict(edge_weight=edge_weight)
         # if self.layer_type == 'GAT':
             # conv_kwargs = dict(edge_attr=edge_weight)
@@ -67,7 +67,7 @@ class BaselineGNN(SparseModule, WeightInitializableModule):
             return GraphConv(**kwargs)
         elif self.layer_type == 'GAT':
             # return GATConv(heads=3, edge_dim=1, **kwargs)
-            return GATConv(heads=1, **kwargs)
+            return GATConv(heads=1, dropout=self.dropout, **kwargs)
         elif self.layer_type == 'GIN':
             node_features, dim = kwargs['in_channels'], kwargs['out_channels']
             return GINConv(Sequential(
@@ -102,6 +102,9 @@ class TimeGNN(SparseModule, WeightInitializableModule):
         
         self.fc1 = Linear(hidden_dim + patient_features_dim, hidden_dim).to(dtype=torch.float64)
         self.fc2 = Linear(hidden_dim, num_classes).to(dtype=torch.float64)
+        
+        self.fc1_aux = Linear(hidden_dim * 2 + study_features_dim, hidden_dim).to(dtype=torch.float64)
+        self.fc2_aux = Linear(hidden_dim, num_classes).to(dtype=torch.float64)
 
         self.readout = LogSoftmax(dim=-1).to(dtype=torch.float64)
         
@@ -118,6 +121,7 @@ class TimeGNN(SparseModule, WeightInitializableModule):
         batches = list(data.batch.split(tuple(data.graph_sizes)))
         
         study_embeddings = []
+        aux = []
         
         for i, (x, edge_index, batch) in enumerate(zip(xes, edge_indices, batches)):
             
@@ -127,9 +131,16 @@ class TimeGNN(SparseModule, WeightInitializableModule):
                                        gap(self.gnn(x, edge_index), batch)]
                 
             # Size of which will be (len(xes), hidden_dim * 3)
-            study_embeddings.append(torch.cat([
-                *pooled_lesions_features, study_features[i, :].reshape(1, -1)
-            ], dim=1).t())
+            study_embedding = torch.cat([*pooled_lesions_features, study_features[i, :].reshape(1, -1)],
+                                        dim=1).t()
+            study_embeddings.append(study_embedding)
+            
+            prediction = F.relu(self.fc1_aux(study_embedding.flatten()))
+            prediction = F.dropout(prediction, p=0.4, training=self.training).to(dtype=torch.float64)
+            prediction = self.fc2_aux(prediction)
+            prediction = self.readout(prediction)
+            
+            aux.append(prediction)
         
         # len(xes) here is the sequence length, we take the last sequence output
         # in order to perform a many-to-one Recurrent Neural Network
@@ -143,7 +154,7 @@ class TimeGNN(SparseModule, WeightInitializableModule):
         patient_pooled = F.dropout(patient_pooled, p=0.4, training=self.training).to(dtype=torch.float64)
         patient_pooled = self.fc2(patient_pooled)
 
-        return self.readout(patient_pooled).reshape(1, -1)
+        return self.readout(patient_pooled).reshape(1, -1), torch.stack(aux)
     
     def __str__(self) -> str:
         """Representation"""

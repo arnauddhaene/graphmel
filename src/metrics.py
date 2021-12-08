@@ -50,7 +50,7 @@ def compute_predictions(model: torch.nn.Module, loader: DataLoader, validation: 
         for data in loader:  # Iterate in batches over the training/test dataset.
             data.to(device)
             
-            out = model(data)
+            out, _ = model(data)
             
             if validation:
                 loss += criterion(out, data.y.flatten()).item()
@@ -114,16 +114,27 @@ class TrainingMetrics(Metrics):
         
         df = pd.DataFrame(self.storage)
         
-        last_epoch = df.loc[df.groupby('metric')['step'].idxmax()]
-        objectives = pd.Series(last_epoch.value.values, index=last_epoch.metric).to_dict()
+        objective = []
+
+        last_epoch = df.step.max()
+
+        for run in df.run.unique():
+            
+            rdf = df[(df.metric == 'Accuracy - validation') \
+                     & (df.step > last_epoch * 0.7) \
+                     & (df.run == run)]
+            
+            objective.append(dict(run=run, var=rdf.value.var(), mean=rdf.value.mean(),
+                                  trend=rdf[['step', 'value']].corr().iloc[0, 1],
+                                  kurtosis=rdf.value.kurtosis(),
+                                  dispersion=rdf.value.var() / df.value.mean()))
+            
+        objs = pd.DataFrame(objective).mean().to_dict()
         
-        # return weighted objective of training and validation accuracy
-        if 'Accuracy - validation' in objectives.keys() and 'Accuracy - training' in objectives.keys():
-            return .25 * objectives['Accuracy - training'] + .75 * objectives['Accuracy - validation']
-        elif 'Accuracy - training' in objectives.keys():
-            return objectives['Accuracy - training']
-        else:
-            raise ValueError("Metrics don't allow for correct computation of objective")
+        return .7 * (objs['mean']) \
+            + .15 * (2. - abs(objs['kurtosis'])) / 2. \
+            + .1 * (1. - objs['dispersion']) \
+            + .05 * (objs['trend'])
 
     def send_log(self, timestamp: dt.datetime):
     

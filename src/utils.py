@@ -176,6 +176,14 @@ def create_dataset(
     distances = pd.read_csv(
         os.path.join(CONNECTION_DIR, DATA_FOLDERS[5], FILES[DATA_FOLDERS[5]]['distances']))
     distances.study_name = distances.study_name.apply(lambda sn: '-'.join(sn.split('_')))
+    
+    progression = pd.read_csv(os.path.join(CONNECTION_DIR + DATA_FOLDERS[1],
+                                           FILES[DATA_FOLDERS[1]]['progression']))
+    progression['pseudorecist'] = progression.pseudorecist.eq('NPD').mul(1)
+    
+    all_labels = progression[progression.study_name.isin(['pre-01', 'post-01', 'post-02'])] \
+        .pivot(index='gpcr_id', columns='study_name', values='pseudorecist') \
+        .loc[X.gpcr_id]
 
     # Get rid of invalid distances
     valid_lesions_per_patient = X.groupby(['gpcr_id', 'study_name']).lesion_label_id.unique().to_dict()
@@ -221,7 +229,9 @@ def create_dataset(
             np.array([]).reshape(0, 2), np.array([]), [], [], []
 
         # Iterate over studies
-        for study in pdf.study_name.unique():
+        studies_ordered = sorted(map(lambda s: (s, extract_study_phase(s)), pdf.study_name.unique()),
+                                 key=lambda kv: kv[1])
+        for study, _ in studies_ordered:
 
             study_edge_index = []
             
@@ -277,10 +287,11 @@ def create_dataset(
         patient_features = torch.tensor(pdf.loc[order][patient_columns].to_numpy()[0, :])
 
         y = torch.tensor(Y.loc[patient])
+        aux_y = torch.tensor(all_labels.loc[patient][dict(studies_ordered).keys()].to_numpy())
 
         data = Data(x=x, study_features=study_features, patient_features=patient_features,
                     edge_index=edge_index, graph_sizes=graph_sizes, split_sizes=split_sizes,
-                    y=y.reshape(-1), edge_weight=edge_weight, num_nodes=x.shape[0])
+                    y=y.reshape(-1), aux_y=aux_y, edge_weight=edge_weight, num_nodes=x.shape[0])
         
         dataset.append(data)
         
@@ -533,7 +544,7 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
         patient_studies = merged_studies[merged_studies.gpcr_id == patient] \
             .set_index('n_days_to_treatment_start').sort_index()
         
-        # Linear interpolation for numeric values 
+        # Linear interpolation for numeric values
         # Follow by backwards fill, then forward fill for the rest
         filled_studies = patient_studies.interpolate(method='index').bfill().ffill().reset_index()
             

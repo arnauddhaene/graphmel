@@ -94,7 +94,7 @@ def run_crossval(
 def train(
     model: nn.Module, loader_train: DataLoader, loader_valid: DataLoader,
     metrics: TrainingMetrics,
-    learning_rate: float = 1e-2, weight_decay: float = 1e-3,
+    learning_rate: float = 1e-2, weight_decay: float = 1e-3, gamma: float = .2,
     epochs: int = 25, device=None, verbose: int = 0
 ) -> None:
     """
@@ -118,8 +118,8 @@ def train(
     class_weights = torch.tensor(class_weights, dtype=torch.double).div(len(loader_train.dataset))
     
     criterion = nn.NLLLoss(weight=class_weights)
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    aux_criterion = nn.NLLLoss(weight=class_weights)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     # Set progressbar
     pbar = tqdm(range(round(epochs)), disable=(verbose < 0))
@@ -133,9 +133,12 @@ def train(
             
             optimizer.zero_grad()
     
-            output = model(data)
+            output, aux = model(data)
             loss = criterion(output, data.y.flatten())
-            loss.backward()
+            aux_loss = aux_criterion(aux, data.aux_y[0, :].long())
+            
+            combined_loss = loss + gamma * aux_loss
+            combined_loss.backward()
             
             nn.utils.clip_grad_norm_(model.parameters(), 1.)
             optimizer.step()
