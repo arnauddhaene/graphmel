@@ -1,5 +1,7 @@
 from tqdm import tqdm
 
+from collections import Counter
+
 from sklearn.model_selection import KFold
 
 import torch
@@ -111,13 +113,16 @@ def train(
     
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+    class_weights = list(Counter(map(lambda d: d.y.item(), loader_train.dataset)).values())
+    class_weights = torch.tensor(class_weights, dtype=torch.double).div(len(loader_train.dataset))
     
-    criterion = nn.NLLLoss()
+    criterion = nn.NLLLoss(weight=class_weights)
     optimizer = torch.optim.Adam(
         model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     # Set progressbar
-    pbar = tqdm(range(epochs), disable=(verbose < 0))
+    pbar = tqdm(range(round(epochs)), disable=(verbose < 0))
     for epoch in pbar:
         epoch_loss = 0.
 
@@ -131,9 +136,14 @@ def train(
             output = model(data)
             loss = criterion(output, data.y.flatten())
             loss.backward()
+            
+            nn.utils.clip_grad_norm_(model.parameters(), 1.)
             optimizer.step()
             
             epoch_loss += loss.item()
+        
+        # Average loss per datapoint to be able to compare to validation loss
+        epoch_loss /= len(loader_train.dataset)
             
         with torch.no_grad():
             acc_train, _ = evaluate(model, loader_train)

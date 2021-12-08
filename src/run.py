@@ -122,13 +122,14 @@ def run(model, connectivity,
         MODEL_PATH = os.path.join(ASSETS_DIR, f'models/{model}-{i}-{timestamp}.pkl')
         torch.save(model.state_dict(), MODEL_PATH)
     
-    loader_test_args = dict(dataset=dataset_test, batch_size=batch_size)
+    if len(dataset_test) > 0:
+        loader_test_args = dict(dataset=dataset_test, batch_size=batch_size)
 
-    loader_test = DataLoader(**loader_test_args)
+        loader_test = DataLoader(**loader_test_args)
 
-    test_metrics = TestingMetrics(epoch=epochs)
-    test_metrics.compute_metrics(models, loader_test)
-    test_metrics.send_log(timestamp=timestamp)
+        test_metrics = TestingMetrics(epoch=epochs)
+        test_metrics.compute_metrics(models, loader_test)
+        test_metrics.send_log(timestamp=timestamp)
     
     mlflow.end_run()
     
