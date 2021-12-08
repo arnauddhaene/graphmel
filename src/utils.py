@@ -513,12 +513,6 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
                       'immuno_therapy_type', 'lympho_absolus_gl', 'concomittant_tvec',
                       'prior_targeted_therapy', 'prior_treatment', 'nivo_maintenance']
 
-    # Transform all one-hot encoded features into True/False to avoid scaler
-    for feature in blood_features:
-        values = blood[feature].value_counts().keys()
-        if len(values) == 2 and all(values == [0, 1]):
-            blood[feature] = blood[feature].astype(bool)
-
     patients = patients[['gpcr_id', *patient_features]]
     blood = blood[['gpcr_id', 'n_days_to_treatment_start', *blood_features]]
     blood['study_name'] = 'blood'
@@ -530,52 +524,29 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
                               & set(blood.gpcr_id) \
                               & set(studies[studies.study_name.isin(['pre-01', 'post-01'])].gpcr_id))
  
-    blood_filtered = pd.DataFrame()
+    merged_studies = pd.concat([blood, studies[['gpcr_id', 'study_name', 'n_days_to_treatment_start']]])
+    
+    blood_processed = pd.DataFrame()
 
     for patient in potential_patients:
-        
-        available_studies = studies[(studies.study_name.isin(['pre-01', 'post-01'])) \
-                                    & (studies.gpcr_id == patient)].study_name.unique()
-        
-        for study in available_studies:
-        
-            mapper = retrieve_mapper(pd.concat([blood, studies]), patient,
-                                     'study_name', 'n_days_to_treatment_start').reset_index(drop=True)
-
-            # Get the `n_days_to_treatment_start` of blood results to aggregate
-            wanted_blood_results_idx = get_closest_blood_results(mapper, study) \
-                .n_days_to_treatment_start.to_list()
-            # Filter and copy to avoid problems when adding study name to each patients study
-            bdf = blood[(blood.gpcr_id == patient) \
-                        & (blood.n_days_to_treatment_start.isin(wanted_blood_results_idx))].copy()
-            bdf['study_name'] = study
             
-            blood_filtered = pd.concat([blood_filtered, bdf])
+        patient_studies = merged_studies[merged_studies.gpcr_id == patient] \
+            .set_index('n_days_to_treatment_start').sort_index()
         
-    blood = blood_filtered.groupby(['gpcr_id', 'study_name']).agg({
-        'bmi': np.mean,
-        'performance_score_ecog': np.mean,
-        'ldh_sang_ul': np.mean,
-        'neutro_absolus_gl': np.mean,
-        'eosini_absolus_gl': np.mean,
-        'leucocytes_sang_gl': np.mean,
-        'immuno_therapy_type': np.sum,
-        'lympho_absolus_gl': np.mean,
-        'sex': pd.Series.mode,
-        'NRAS_MUTATION': pd.Series.mode,
-        'BRAF_MUTATION': pd.Series.mode,
-        'concomittant_tvec': pd.Series.mode,
-        'prior_targeted_therapy': pd.Series.mode,
-        'prior_treatment': pd.Series.mode,
-        'nivo_maintenance': pd.Series.mode
-    }).reset_index()
+        # Linear interpolation for numeric values 
+        # Follow by backwards fill, then forward fill for the rest
+        filled_studies = patient_studies.interpolate(method='index').bfill().ffill().reset_index()
+            
+        blood_processed = pd.concat([
+            blood_processed, filled_studies[filled_studies.study_name.isin(['pre-01', 'post-01'])]])
 
-    # Fix the pd.Series.mode NaN bug
-    for f in ['sex', 'NRAS_MUTATION', 'BRAF_MUTATION']:
-        blood[f] = blood[f].apply(lambda val: np.nan if type(val) != str else val)
+    # Transform all one-hot encoded features into True/False to avoid scaler
+    for feature in blood_features:
+        values = blood_processed[feature].value_counts().keys()
+        if len(values) == 2 and all(values == [0, 1]):
+            blood_processed[feature] = blood_processed[feature].astype(bool)
         
-    # Fix for duplicates when summing therapy type lists
-    blood.immuno_therapy_type = blood.immuno_therapy_type.apply(set).apply(list)
+    blood_processed.reset_index(inplace=True, drop=True)
 
     progression.set_index('gpcr_id', inplace=True)
     labels = progression[progression.study_name == 'post-02'].loc[potential_patients].pseudorecist
@@ -585,23 +556,10 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
 
     # Prepare for return
     lesions.set_index(['gpcr_id', 'study_name', 'lesion_label_id'], inplace=True)
-    patients = blood.merge(patients, on='gpcr_id', how='inner')
+    patients = blood_processed.merge(patients, on='gpcr_id', how='inner')
     patients.set_index(['gpcr_id', 'study_name'], inplace=True)
 
     return labels, lesions, patients
-
-
-def retrieve_mapper(df: pd.DataFrame, patient: int, index: str, values: str):
-    return df[df.gpcr_id == patient][[index, values]].sort_values(by=values)
-
-
-def get_closest_blood_results(mapper: pd.DataFrame, study: str = 'post-01'):
-    # Fetch index of wanted study
-    p1i = mapper[mapper.study_name == study].index.to_numpy()[0]
-    # Get intersection of closest before and after and check that they exist
-    closest_idx = list(set((p1i - 1, p1i + 1)) & set(mapper[mapper.study_name == 'blood'].index))
-    # Return closest before and after blood results
-    return mapper[mapper.study_name.isin([study, 'blood'])].loc[closest_idx]
 
 
 def classify_response(row):
