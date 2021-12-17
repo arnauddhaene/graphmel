@@ -1,0 +1,117 @@
+\documentclass[11pt,oneside,english]{book}
+\usepackage[margin=1.2in]{geometry}
+\usepackage[toc,page]{appendix}
+\usepackage[pagestyles]{titlesec}
+\usepackage{graphicx}
+\usepackage[nottoc]{tocbibind}
+\usepackage{lipsum}
+\usepackage{hyperref}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{caption}
+
+\titleformat{\chapter}[display]
+  {\bfseries\Large}
+  {\filright \Huge\thechapter}
+  {1ex}
+  {\filright\vspace{1ex}}
+  [\vspace{1ex}\titlerule]
+
+
+\begin{document}
+
+\captionsetup[figure]{margin=1.5cm,font=small,labelfont={bf},name={Figure},labelsep=colon,textfont={it}}
+\captionsetup[table]{margin=1.5cm,font=small,labelfont={bf},name={Tableau},labelsep=colon,textfont={it}}
+\SetLipsumDefault{1}
+
+\frontmatter
+
+\begin{titlepage}
+
+
+% -------------------------------------------------------------------
+% You need to edit the details here
+% -------------------------------------------------------------------
+
+\begin{center}
+{\LARGE École Polytechnique de Lausanne}\\[1.5cm]
+\linespread{1.2}\huge {\bfseries Predicting metastatic melanoma response to immunotherapy using Recurrent Graph Neural Networks on processed FDG PET/CT scans}\\[1.5cm]
+\linespread{1}
+\includegraphics[width=10cm]{images/EPFL_logo.png}\\[1cm]
+{\Large Arnaud Patrick E. Dhaene}\\[1cm]
+\large Semester project\\[0.3cm] 
+Signal Processing Laboratory (LTS4)\\[0.3cm]
+Supervised by Dorina Thanou, PhD\\[2cm]
+\today
+\end{center}
+
+\end{titlepage}
+
+
+% -------------------------------------------------------------------
+% Declaration
+% -------------------------------------------------------------------
+
+\newpage
+\section*{\Large Declaration}
+
+All phrases and passages quoted in this document from the work of others have been specifically identified by a clear citation to the author, the work, and the corresponding page(s). All illustrations that are not the work of the author of this report are used with the permission of the author and are also clearly referenced. I understand that failure to do so is tantamount to plagiarism and will be considered as such in the evaluation.\\[1cm]
+
+\noindent Signature:\\[1mm]
+\rule[1em]{25em}{0.5pt}
+
+\noindent Date: \today \\[1mm]
+\rule[1em]{25em}{0.5pt}
+
+
+% -------------------------------------------------------------------
+% Abstract
+% -------------------------------------------------------------------
+
+\input{sections/abstract.tex}
+
+
+% -------------------------------------------------------------------
+% Contents, list of figures, list of tables
+% -------------------------------------------------------------------
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+
+% -------------------------------------------------------------------
+% Main sections (as required)
+% -------------------------------------------------------------------
+
+\mainmatter
+
+\input{sections/introduction.tex}
+\input{sections/data.tex}
+\input{sections/methodology.tex}
+\input{sections/results.tex}
+\input{sections/discussion.tex}
+\input{sections/conclusion.tex}
+
+
+% -------------------------------------------------------------------
+% References
+% -------------------------------------------------------------------
+
+\renewcommand{\bibname}{References}
+
+\bibliographystyle{ieeetr}
+\bibliography{export-data} 
+
+
+% -------------------------------------------------------------------
+% Appendices
+% -------------------------------------------------------------------
+
+% \begin{appendices}
+% \input{sections/appendixA.tex}
+% \input{sections/appendixB.tex}
+% \end{appendices}
+
+\end{document}
