@@ -43,6 +43,8 @@ from utils import load_dataset, ASSETS_DIR
               help="Threshold of lesions suspicion for inclusion.")
 @click.option('--distance', default=0.5,
               help="Wasserstein distance threshold for graph creation.")
+@click.option('--gamma', default=0.5,
+              help="Auxiliary loss hyper-parameter.")
 @click.option('--experiment-name', default='Default',
               help="Assign run to experiment.")
 @click.option('--run-name', default='',
@@ -51,7 +53,7 @@ from utils import load_dataset, ASSETS_DIR
               help="Print out info for debugging purposes.")
 def run(model, connectivity,
         epochs, lr, decay, hidden_dim, layers,
-        test_size, val_size, seed, ensembles, suspicious, distance,
+        test_size, val_size, seed, ensembles, suspicious, distance, gamma,
         experiment_name, run_name, verbose):
     
     batch_size = 1
@@ -66,6 +68,7 @@ def run(model, connectivity,
     mlflow.start_run(experiment_id=experiment.experiment_id, run_name=(model if run_name == '' else run_name))
     
     mlflow.log_param('Ensembles', ensembles)
+    mlflow.log_param('Auxiliary loss weight', gamma)
     mlflow.log_param('Suspicion threshold', suspicious)
     mlflow.log_param('Learning Rate', lr)
     mlflow.log_param('Weight Decay', decay)
@@ -110,7 +113,7 @@ def run(model, connectivity,
     metrics = TrainingMetrics()
     
     run_ensembles(models, dataset_train, val_size=val_size,
-                  metrics=metrics, lr=lr, decay=decay, batch_size=batch_size,
+                  metrics=metrics, lr=lr, decay=decay, batch_size=batch_size, gamma=gamma,
                   epochs=epochs, verbose=verbose)
     
     metrics.send_log(timestamp=timestamp)

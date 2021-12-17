@@ -202,13 +202,21 @@ def create_dataset(
     distances['valid'] = distances.apply(is_valid_distance, axis=1)
     distances = distances[distances.valid]
     
-    node_columns = ['original_shape_flatness', 'original_shape_leastaxislength',
-                    'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
-                    'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
-                    'original_shape_maximum3ddiameter', 'original_shape_meshvolume',
-                    'original_shape_minoraxislength', 'original_shape_sphericity',
-                    'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
-                    'original_shape_voxelvolume', 'mtv', 'tlg', 'bones_abdomen',
+    # node_columns = ['original_shape_flatness', 'original_shape_leastaxislength',
+    #                 'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
+    #                 'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
+    #                 'original_shape_maximum3ddiameter', 'original_shape_meshvolume',
+    #                 'original_shape_minoraxislength', 'original_shape_sphericity',
+    #                 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
+    #                 'original_shape_voxelvolume',
+    #                 'suv_skewness', 'suv_entropy', 'suv_kurtosis', 'suv_uniformity', 'suv_energy',
+    #                 'mtv', 'tlg', 'bones_abdomen',
+    #                 'bones_lowerlimb', 'bones_thorax', 'kidney', 'liver', 'lung',
+    #                 'lymphnode_abdomen', 'lymphnode_lowerlimb', 'lymphnode_thorax',
+    #                 'other_abdomen', 'other_lowerlimb', 'other_thorax', 'spleen']
+    
+    node_columns = ['original_shape_sphericity', 'original_shape_surfacevolumeratio',
+                    'suv_skewness', 'suv_kurtosis', 'mtv', 'tlg', 'bones_abdomen',
                     'bones_lowerlimb', 'bones_thorax', 'kidney', 'liver', 'lung',
                     'lymphnode_abdomen', 'lymphnode_lowerlimb', 'lymphnode_thorax',
                     'other_abdomen', 'other_lowerlimb', 'other_thorax', 'spleen']
@@ -475,14 +483,16 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
     lesions = lesions.set_index(['gpcr_id', 'study_name']).loc[multiple_lesions].reset_index()
 
     # Keep only radiomics features and assigned organ
-    radiomics_features = [
-        'original_shape_elongation', 'original_shape_flatness', 'original_shape_leastaxislength',
-        'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
-        'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
-        'original_shape_maximum3ddiameter', 'original_shape_meshvolume', 'original_shape_minoraxislength',
-        'original_shape_sphericity', 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
-        'original_shape_voxelvolume', 'mtv', 'tlg', 'pars_suspicious_prob_petct',
-        'suv_skewness', 'suv_entropy', 'suv_kurtosis', 'suv_uniformity', 'suv_energy']
+    radiomics_features = ['original_shape_sphericity', 'original_shape_surfacevolumeratio', 'mtv', 'tlg',
+                          'suv_skewness', 'suv_kurtosis', 'pars_suspicious_prob_petct']
+    # radiomics_features = [
+    #     'original_shape_elongation', 'original_shape_flatness', 'original_shape_leastaxislength',
+    #     'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
+    #     'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
+    #     'original_shape_maximum3ddiameter', 'original_shape_meshvolume', 'original_shape_minoraxislength',
+    #     'original_shape_sphericity', 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
+    #     'original_shape_voxelvolume', 'mtv', 'tlg', 'pars_suspicious_prob_petct',
+    #     'suv_skewness', 'suv_entropy', 'suv_kurtosis', 'suv_uniformity', 'suv_energy']
 
     lesions = lesions[['gpcr_id', 'study_name', 'lesion_label_id', *radiomics_features, 'assigned_organ']]
 
@@ -521,8 +531,9 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
     patient_features = ['age_at_treatment_start_in_years']
     blood_features = ['sex', 'bmi', 'performance_score_ecog', 'ldh_sang_ul', 'neutro_absolus_gl',
                       'eosini_absolus_gl', 'leucocytes_sang_gl', 'NRAS_MUTATION', 'BRAF_MUTATION',
-                      'immuno_therapy_type', 'lympho_absolus_gl', 'concomittant_tvec',
-                      'prior_targeted_therapy', 'prior_treatment', 'nivo_maintenance']
+                      'immuno_therapy_type']
+
+# 'prior_targeted_therapy', 'prior_treatment', 'nivo_maintenance', 'lympho_absolus_gl', 'concomittant_tvec',]
 
     patients = patients[['gpcr_id', *patient_features]]
     blood = blood[['gpcr_id', 'n_days_to_treatment_start', *blood_features]]
@@ -531,8 +542,9 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
     radiomics = pd.read_csv(os.path.join(CONNECTION_DIR, DATA_FOLDERS[3],
                                          FILES[DATA_FOLDERS[3]]['radiomics']))
 
-    potential_patients = list(set(lesions.gpcr_id) & set(patients.gpcr_id) & set(radiomics.gpcr_id) \
-                              & set(blood.gpcr_id) \
+    potential_patients = list(set(lesions[lesions.study_name == 'post-01'].gpcr_id) \
+                              & set(patients.gpcr_id) & set(radiomics.gpcr_id) & set(blood.gpcr_id) \
+                              & set(progression[progression.study_name == 'post-02'].gpcr_id) \
                               & set(studies[studies.study_name.isin(['pre-01', 'post-01'])].gpcr_id))
  
     merged_studies = pd.concat([blood, studies[['gpcr_id', 'study_name', 'n_days_to_treatment_start']]])
@@ -566,6 +578,7 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
         print(f'The intersection of datasets showed {len(potential_patients)} potential datapoints.')
 
     # Prepare for return
+    lesions = lesions[lesions.gpcr_id.isin(potential_patients)]
     lesions.set_index(['gpcr_id', 'study_name', 'lesion_label_id'], inplace=True)
     patients = blood_processed.merge(patients, on='gpcr_id', how='inner')
     patients.set_index(['gpcr_id', 'study_name'], inplace=True)

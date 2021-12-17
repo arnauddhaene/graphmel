@@ -1,8 +1,31 @@
-import pandas as pd
-import numpy as np
-
 from tqdm import tqdm
-from utils import fetch_data
+
+import numpy as np
+import pandas as pd
+
+import mlflow
+
+# Build PipeLine of ColumnTransformers
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
+from sklearn.model_selection import train_test_split
+
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import LogisticRegression
+
+from utils import fetch_data, Preprocessor
 
 
 if __name__ == '__main__':
@@ -20,8 +43,6 @@ if __name__ == '__main__':
 
     dataset = lesions_agg.merge(patients, on='gpcr_id', how='inner')
     dataset.set_index('gpcr_id', inplace=True)
-    
-    from utils import Preprocessor
 
     # Separate features by type
     numerical = list(dataset.select_dtypes(np.number).columns)
@@ -34,13 +55,6 @@ if __name__ == '__main__':
         
     features_range = list(range(len(numerical) + len(categorical) + len(multivalue)))
     bp = np.cumsum([len(numerical), len(categorical), len(multivalue)])
-
-    # Build PipeLine of ColumnTransformers
-    from sklearn.compose import ColumnTransformer
-    from sklearn.pipeline import Pipeline
-    from sklearn.feature_extraction.text import CountVectorizer
-    from sklearn.preprocessing import OneHotEncoder, StandardScaler
-    from sklearn.impute import SimpleImputer
 
     ct = Pipeline([
         ('imputers', ColumnTransformer([
@@ -62,8 +76,6 @@ if __name__ == '__main__':
         + ct.named_steps['preprocess'].transformers_[2][1].get_feature_names() \
         + ct.named_steps['preprocess'].transformers_[3][1].get_feature_names())
 
-    from sklearn.model_selection import train_test_split
-
     I_train, I_test, y_train, y_test = \
         train_test_split(labels.index, labels, test_size=0.2, random_state=27)
         
@@ -74,16 +86,6 @@ if __name__ == '__main__':
 
     y_train = labels.loc[I_train]
     y_test = labels.loc[I_test]
-    
-    from sklearn.neural_network import MLPClassifier
-    from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.svm import SVC
-    from sklearn.gaussian_process import GaussianProcessClassifier
-    from sklearn.gaussian_process.kernels import RBF
-    from sklearn.tree import DecisionTreeClassifier
-    from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
-    from sklearn.naive_bayes import GaussianNB
-    from sklearn.linear_model import LogisticRegression
 
     names = ["Nearest Neighbors", "Linear SVM", "RBF SVM", "Gaussian Process",
              "Decision Tree", "Random Forest", "Neural Net", "AdaBoost",
@@ -101,9 +103,6 @@ if __name__ == '__main__':
         GaussianNB(),
         LogisticRegression(penalty='l2', solver='liblinear')]
     
-    import mlflow
-    from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
-
     for name, clf in tqdm(zip(names, classifiers), total=len(names)):
         
         mlflow.start_run(run_name=name)

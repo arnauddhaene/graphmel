@@ -111,6 +111,10 @@ class TimeGNN(SparseModule, WeightInitializableModule):
         self.gaussian_noise = GaussianNoise()
         
         self.apply(self.weights_init)
+        
+    def reset(self) -> None:
+        """Reset weights"""
+        self.apply(self.weights_init)
 
     def forward(self, data):
         

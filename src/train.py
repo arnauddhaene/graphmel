@@ -14,8 +14,8 @@ from metrics import evaluate, TrainingMetrics
 
 def run_ensembles(
     models: nn.ModuleList, dataset_train: DataLoader, metrics: TrainingMetrics,
-    lr: float = 1e-2, decay: float = 1e-3, batch_size: int = 4, val_size: float = 0.0,
-    epochs: int = 25, device=None, verbose: int = 0
+    lr: float = 1e-2, decay: float = 1e-3, batch_size: int = 4, gamma: float = .5,
+    val_size: float = 0.0, epochs: int = 25, device=None, verbose: int = 0
 ):
             
     # Create progress bar
@@ -49,13 +49,13 @@ def run_ensembles(
         loader_train = DataLoader(**loader_train_args)
                 
         train(model, loader_train, loader_valid, metrics,
-              learning_rate=lr, weight_decay=decay, epochs=epochs, device=device,
-              verbose=verbose)
+              learning_rate=lr, weight_decay=decay, epochs=epochs, gamma=gamma,
+              device=device, verbose=verbose)
 
 
 def run_crossval(
     model: nn.Module, dataset_train: DataLoader, metrics: TrainingMetrics, cv: int = 5,
-    lr: float = 1e-2, decay: float = 1e-3, batch_size: int = 1,
+    lr: float = 1e-2, decay: float = 1e-3, batch_size: int = 1, gamma: float = 0.5,
     epochs: int = 25, device=None, verbose: int = 0
 ):
         
@@ -84,17 +84,16 @@ def run_crossval(
             loader_valid = DataLoader(**loader_valid_args)
                     
             train(model, loader_train, loader_valid, metrics,
-                  learning_rate=lr, weight_decay=decay, epochs=epochs, device=device,
-                  verbose=verbose)
+                  learning_rate=lr, weight_decay=decay, epochs=epochs, gamma=gamma,
+                  device=device, verbose=verbose)
         
     else:
         raise ValueError(f'k={cv} is not appropriate for k-fold cross-validation.')
 
 
 def train(
-    model: nn.Module, loader_train: DataLoader, loader_valid: DataLoader,
-    metrics: TrainingMetrics,
-    learning_rate: float = 1e-2, weight_decay: float = 1e-3, gamma: float = .2,
+    model: nn.Module, loader_train: DataLoader, loader_valid: DataLoader, metrics: TrainingMetrics,
+    learning_rate: float = 1e-2, weight_decay: float = 1e-3, gamma: float = .5,
     epochs: int = 25, device=None, verbose: int = 0
 ) -> None:
     """

@@ -16,24 +16,23 @@ from train import run_crossval
               help="Random seed.")
 @click.option('--cv', default=5,
               help="Cross-validation splits.")
-@click.option('--suspicious', default=0.5,
-              help="Threshold of lesions suspicion for inclusion.")
 @click.option('--filename', default='hpopt-results-1',
               help="Threshold of lesions suspicion for inclusion.")
 @click.option('--verbose', default=-1, type=int,
               help="Print out info for debugging purposes.")
-def tune_hyperparams(seed, cv, suspicious, filename, verbose) -> None:
+def tune_hyperparams(seed, cv, filename, verbose) -> None:
     
     analysis = tune.run(
         invoke_run,
         config=dict(
-            verbose=verbose, cv=cv, seed=seed, suspicious=suspicious,
-            epochs=tune.quniform(75, 120, q=15),
+            verbose=verbose, cv=cv, seed=seed, suspicious=0.4,
+            gamma=tune.grid_search([.0, .25, .5, .75]),
+            epochs=100,
             decay=tune.loguniform(1e-4, 1e-3, 1e-2),
             lr=tune.loguniform(1e-4, 1e-3, 1e-2),
             hidden_dim=tune.grid_search([16, 32, 64]),
             distance=tune.grid_search([1., 5.]),
-            layers=tune.grid_search([2, 5, 10, 15])
+            layers=tune.grid_search([5, 10, 15])
         ))
     
     result = analysis.get_best_config(metric='objective', mode='max')
@@ -45,9 +44,9 @@ def tune_hyperparams(seed, cv, suspicious, filename, verbose) -> None:
     
 def invoke_run(config):
     
-    verbose, cv, seed, suspicious, epochs, distance, layers = \
+    verbose, cv, seed, suspicious, epochs, distance, layers, gamma = \
         config['verbose'], config['cv'], config['seed'], config['suspicious'], config['epochs'], \
-        config['distance'], config['layers']
+        config['distance'], config['layers'], config['gamma']
     
     # Extract hyperparameters
     lr, decay, hidden_dim = config['lr'], config['decay'], config['hidden_dim']
@@ -65,12 +64,12 @@ def invoke_run(config):
         study_features_dim=dataset_train[0].study_features.shape[1],
         patient_features_dim=dataset_train[0].patient_features.shape[0])
         
-    models = TimeGNN(layer_type='GraphConv', **model_args).to(device)
+    models = TimeGNN(layer_type='GAT', **model_args).to(device)
         
     metrics = TrainingMetrics()
     
     run_crossval(models, dataset_train, metrics=metrics, cv=cv, \
-                 lr=lr, decay=decay, batch_size=batch_size, \
+                 lr=lr, decay=decay, batch_size=batch_size, gamma=gamma, \
                  epochs=epochs, device=device, verbose=verbose)
         
     metric = metrics.get_objective()
