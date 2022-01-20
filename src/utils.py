@@ -202,24 +202,24 @@ def create_dataset(
     distances['valid'] = distances.apply(is_valid_distance, axis=1)
     distances = distances[distances.valid]
     
-    # node_columns = ['original_shape_flatness', 'original_shape_leastaxislength',
-    #                 'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
-    #                 'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
-    #                 'original_shape_maximum3ddiameter', 'original_shape_meshvolume',
-    #                 'original_shape_minoraxislength', 'original_shape_sphericity',
-    #                 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
-    #                 'original_shape_voxelvolume',
-    #                 'suv_skewness', 'suv_entropy', 'suv_kurtosis', 'suv_uniformity', 'suv_energy',
-    #                 'mtv', 'tlg', 'bones_abdomen',
-    #                 'bones_lowerlimb', 'bones_thorax', 'kidney', 'liver', 'lung',
-    #                 'lymphnode_abdomen', 'lymphnode_lowerlimb', 'lymphnode_thorax',
-    #                 'other_abdomen', 'other_lowerlimb', 'other_thorax', 'spleen']
-    
-    node_columns = ['original_shape_sphericity', 'original_shape_surfacevolumeratio',
-                    'suv_skewness', 'suv_kurtosis', 'mtv', 'tlg', 'bones_abdomen',
+    node_columns = ['original_shape_flatness', 'original_shape_leastaxislength',
+                    'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
+                    'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
+                    'original_shape_maximum3ddiameter', 'original_shape_meshvolume',
+                    'original_shape_minoraxislength', 'original_shape_sphericity',
+                    'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
+                    'original_shape_voxelvolume',
+                    'suv_skewness', 'suv_entropy', 'suv_kurtosis', 'suv_uniformity', 'suv_energy',
+                    'mtv', 'tlg', 'bones_abdomen',
                     'bones_lowerlimb', 'bones_thorax', 'kidney', 'liver', 'lung',
                     'lymphnode_abdomen', 'lymphnode_lowerlimb', 'lymphnode_thorax',
                     'other_abdomen', 'other_lowerlimb', 'other_thorax', 'spleen']
+    
+    # node_columns = ['original_shape_sphericity', 'original_shape_surfacevolumeratio',
+    #                 'suv_skewness', 'suv_kurtosis', 'mtv', 'tlg', 'bones_abdomen',
+    #                 'bones_lowerlimb', 'bones_thorax', 'kidney', 'liver', 'lung',
+    #                 'lymphnode_abdomen', 'lymphnode_lowerlimb', 'lymphnode_thorax',
+    #                 'other_abdomen', 'other_lowerlimb', 'other_thorax', 'spleen']
     patient_columns = ['age_at_treatment_start_in_years', 'x0_male']
     
     study_columns = [str(feat) for feat in list(X.columns) \
@@ -483,16 +483,16 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
     lesions = lesions.set_index(['gpcr_id', 'study_name']).loc[multiple_lesions].reset_index()
 
     # Keep only radiomics features and assigned organ
-    radiomics_features = ['original_shape_sphericity', 'original_shape_surfacevolumeratio', 'mtv', 'tlg',
-                          'suv_skewness', 'suv_kurtosis', 'pars_suspicious_prob_petct']
-    # radiomics_features = [
-    #     'original_shape_elongation', 'original_shape_flatness', 'original_shape_leastaxislength',
-    #     'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
-    #     'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
-    #     'original_shape_maximum3ddiameter', 'original_shape_meshvolume', 'original_shape_minoraxislength',
-    #     'original_shape_sphericity', 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
-    #     'original_shape_voxelvolume', 'mtv', 'tlg', 'pars_suspicious_prob_petct',
-    #     'suv_skewness', 'suv_entropy', 'suv_kurtosis', 'suv_uniformity', 'suv_energy']
+    # radiomics_features = ['original_shape_sphericity', 'original_shape_surfacevolumeratio', 'mtv', 'tlg',
+    #                       'suv_skewness', 'suv_kurtosis', 'pars_suspicious_prob_petct']
+    radiomics_features = [
+        'original_shape_elongation', 'original_shape_flatness', 'original_shape_leastaxislength',
+        'original_shape_majoraxislength', 'original_shape_maximum2ddiametercolumn',
+        'original_shape_maximum2ddiameterrow', 'original_shape_maximum2ddiameterslice',
+        'original_shape_maximum3ddiameter', 'original_shape_meshvolume', 'original_shape_minoraxislength',
+        'original_shape_sphericity', 'original_shape_surfacearea', 'original_shape_surfacevolumeratio',
+        'original_shape_voxelvolume', 'mtv', 'tlg', 'pars_suspicious_prob_petct',
+        'suv_skewness', 'suv_entropy', 'suv_kurtosis', 'suv_uniformity', 'suv_energy']
 
     lesions = lesions[['gpcr_id', 'study_name', 'lesion_label_id', *radiomics_features, 'assigned_organ']]
 
@@ -531,9 +531,10 @@ def fetch_data(suspicious: float, verbose: int = 0) -> Tuple[pd.Series, pd.DataF
     patient_features = ['age_at_treatment_start_in_years']
     blood_features = ['sex', 'bmi', 'performance_score_ecog', 'ldh_sang_ul', 'neutro_absolus_gl',
                       'eosini_absolus_gl', 'leucocytes_sang_gl', 'NRAS_MUTATION', 'BRAF_MUTATION',
-                      'immuno_therapy_type']
-
-# 'prior_targeted_therapy', 'prior_treatment', 'nivo_maintenance', 'lympho_absolus_gl', 'concomittant_tvec',]
+                      'immuno_therapy_type',
+                      ##
+                      'prior_targeted_therapy', 'prior_treatment', 'nivo_maintenance', 'lympho_absolus_gl',
+                      'concomittant_tvec']
 
     patients = patients[['gpcr_id', *patient_features]]
     blood = blood[['gpcr_id', 'n_days_to_treatment_start', *blood_features]]
